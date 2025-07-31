@@ -108,15 +108,7 @@ if aba == "📤 Upload de planilha":
             else:
                 st.success("✅ Nenhuma coluna com valores nulos.")
 
-            def nome_invalido(col):
-                col_ascii = unicodedata.normalize("NFKD", col).encode("ASCII", "ignore").decode()
-                return not col_ascii.replace("_", "").isalnum()
-
-            colunas_invalidas = [col for col in df.columns if nome_invalido(col)]
-            if colunas_invalidas:
-                st.error(f"🚫 Nomes de colunas inválidos: {', '.join(colunas_invalidas)}")
-            else:
-                st.success("✅ Todos os nomes de colunas são válidos.")
+            
 
             if st.button("📧 Enviar e Consolidar"):
                 if not responsavel.strip():
@@ -154,6 +146,19 @@ if aba == "📤 Upload de planilha":
                             buffer = BytesIO()
                             df_final.to_excel(buffer, index=False, sheet_name="Dados")
                             buffer.seek(0)
+                            
+                            # Salvar planilha enviada pelo responsável
+                            try:
+                                data_base = df["DATA"].min()
+                                nome_pasta = f"Relatorios_Enviados/{data_base.strftime('%Y-%m')}"
+                                nome_arquivo = f"{nome_pasta}/{responsavel.strip()}_{datetime.now().strftime('%d-%m-%Y_%Hh%M')}.xlsx"
+                                buffer_envio = BytesIO()
+                                df.to_excel(buffer_envio, index=False)
+                                buffer_envio.seek(0)
+                                upload_onedrive(nome_arquivo, buffer_envio.read(), token)
+                            except Exception as e:
+                                st.warning(f"⚠️ Não foi possível salvar o arquivo enviado: {e}")
+
                             sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
                             if sucesso:
                                 st.success("✅ Consolidado atualizado com sucesso!")
