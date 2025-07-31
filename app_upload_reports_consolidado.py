@@ -27,16 +27,17 @@ def mover_arquivo_existente(nome_arquivo, token):
     headers = {"Authorization": f"Bearer {token}"}
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
+        file_id = response.json().get("id")
+        timestamp = datetime.now().strftime("%Y-%m-%d_%Hh%M")
+        novo_nome = nome_arquivo.replace(".xlsx", f"_backup_{timestamp}.xlsx")
+        patch_url = f"https://graph.microsoft.com/v1.0/sites/{st.secrets['SITE_ID']}/drives/{st.secrets['DRIVE_ID']}/items/{file_id}"
+        patch_body = {"name": novo_nome}
+        patch_headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+        }
+        requests.patch(patch_url, headers=patch_headers, json=patch_body)
     file_id = response.json().get("id")
-    timestamp = datetime.now().strftime("%Y-%m-%d_%Hh%M")
-    novo_nome = nome_arquivo.replace(".xlsx", f"_backup_{timestamp}.xlsx")
-    patch_url = f"https://graph.microsoft.com/v1.0/sites/{st.secrets['SITE_ID']}/drives/{st.secrets['DRIVE_ID']}/items/{file_id}"
-    patch_body = {"name": novo_nome}
-    patch_headers = {
-    "Authorization": f"Bearer {token}",
-    "Content-Type": "application/json"
-    }
-    requests.patch(patch_url, headers=patch_headers, json=patch_body)
 
 def upload_onedrive(nome_arquivo, conteudo_arquivo, token):
     mover_arquivo_existente(nome_arquivo, token)
