@@ -102,6 +102,7 @@ if aba == "📤 Upload de planilha":
             sheets = xls.sheet_names
             sheet = st.selectbox("Selecione a aba:", sheets) if len(sheets) > 1 else sheets[0]
             df = pd.read_excel(uploaded_file, sheet_name=sheet)
+            df.columns = df.columns.str.strip().str.upper()
         except Exception as e:
             st.error(f"Erro ao ler o Excel: {e}")
             df = None
@@ -137,21 +138,22 @@ if st.button("📧 Enviar e Consolidar"):
             if r.status_code == 200:
                 from io import BytesIO
                 df_consolidado = pd.read_excel(BytesIO(r.content))
+                df_consolidado.columns = df_consolidado.columns.str.strip().str.upper()
             else:
                 df_consolidado = pd.DataFrame()
-            # Garante coluna "Responsável"
-            df["Responsável"] = responsavel.strip()
+            # Garante coluna "RESPONSÁVEL"
+            df["RESPONSÁVEL"] = responsavel.strip()
             # Validação da coluna de data
-            if "Data" not in df.columns or "Data" not in df_consolidado.columns:
+            if "DATA" not in df.columns or "DATA" not in df_consolidado.columns:
                 st.error("❌ A planilha enviada e o consolidado precisam conter a coluna 'Data'.")
             else:
-                df["Data"] = pd.to_datetime(df["Data"])
-                df_consolidado["Data"] = pd.to_datetime(df_consolidado["Data"])
-                datas_novas = df["Data"].dt.normalize().unique()
+                df["DATA"] = pd.to_datetime(df["DATA"])
+                df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"])
+                datas_novas = df["DATA"].dt.normalize().unique()
                 df_consolidado = df_consolidado[
                     ~(
-                        (df_consolidado["Responsável"] == responsavel.strip()) &
-                        (df_consolidado["Data"].dt.normalize().isin(datas_novas))
+                        (df_consolidado["RESPONSÁVEL"] == responsavel.strip()) &
+                        (df_consolidado["DATA"].dt.normalize().isin(datas_novas))
                     )
                 ]
                 df_final = pd.concat([df_consolidado, df], ignore_index=True)
