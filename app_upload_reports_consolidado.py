@@ -4,7 +4,6 @@ import pandas as pd
 import requests
 
                             
-, token)
                             if sucesso:
                                 st.success("✅ Consolidado atualizado com sucesso!")
                             else:
