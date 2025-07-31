@@ -150,7 +150,7 @@ df_consolidado.columns = df_consolidado.columns.str.strip().str.upper()
 
 if "DATA" not in df.columns or "DATA" not in df_consolidado.columns:
                 st.error("❌ A planilha enviada e o consolidado precisam conter a coluna 'Data'.")
-            else:
+        else:
                 df["DATA"] = pd.to_datetime(df["DATA"])
                 df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"])
                 datas_novas = df["DATA"].dt.normalize().unique()
