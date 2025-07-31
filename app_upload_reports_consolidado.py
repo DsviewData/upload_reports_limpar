@@ -93,8 +93,8 @@ if aba == "📤 Upload de planilha":
 
     uploaded_file = st.file_uploader("Escolha um arquivo Excel", type=["xlsx"])
 
-# === CAMPO RESPONSÁVEL ===
-responsavel = st.text_input("Digite seu nome (responsável):")
+    # === CAMPO RESPONSÁVEL ===
+    responsavel = st.text_input("Digite seu nome (responsável):")
 
     if uploaded_file:
         try:
