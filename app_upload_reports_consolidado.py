@@ -160,14 +160,14 @@ if aba == "📤 Upload de planilha":
                             buffer = BytesIO()
                             df_final.to_excel(buffer, index=False, sheet_name="Dados")
                             buffer.seek(0)
-                            
+
             # Salvar planilha enviada pelo usuário em subpasta no OneDrive
             from datetime import datetime
             nome_pasta = f"Relatorios_Enviados/{responsavel.strip()}_{datetime.now().strftime('%Y-%m-%d')}"
             nome_arquivo_original = f"{nome_pasta}/{uploaded_file.name}"
             upload_onedrive(nome_arquivo_original, uploaded_file.getbuffer(), token)
 
-                            sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
+                                                        sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
                             if sucesso:
                                 st.success("✅ Consolidado atualizado com sucesso!")
                             else:
