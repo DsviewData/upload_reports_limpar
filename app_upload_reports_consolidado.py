@@ -53,12 +53,12 @@ def upload_onedrive(nome_arquivo, conteudo_arquivo, token):
 def listar_arquivos(token):
     url = f"https://graph.microsoft.com/v1.0/users/{EMAIL_ONEDRIVE}/drive/root:/{PASTA}:/children"
     headers = {"Authorization": f"Bearer {token}"}
-    r = requests.get(url, headers=headers)
     if r.status_code == 200:
-    return r.json().get("value", [])
+        return r.json().get("value", [])
     else:
-    st.error(f"Erro ao listar: {r.status_code}")
-    st.code(r.text)
+        st.error(f"Erro ao listar: {r.status_code}")
+        st.code(r.text)
+        return []
     return []
 
 def deletar_arquivo(token, file_id):
