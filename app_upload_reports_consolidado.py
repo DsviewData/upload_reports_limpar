@@ -167,7 +167,7 @@ if aba == "📤 Upload de planilha":
             nome_arquivo_original = f"{nome_pasta}/{uploaded_file.name}"
             upload_onedrive(nome_arquivo_original, uploaded_file.getbuffer(), token)
 
-                                                        sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
+                                                                                    sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
                             if sucesso:
                                 st.success("✅ Consolidado atualizado com sucesso!")
                             else:
