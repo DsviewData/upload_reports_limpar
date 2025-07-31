@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime
-from msal import ConfidentialClientApplication
-from io import BytesIO
-import unicodedata
+                            from datetime import datetime
+                            nome_pasta = f"Relatorios_Enviados/{responsavel.strip()}_{datetime.now().strftime('%Y-%m-%d')}"
+                            nome_arquivo_original = f"{nome_pasta}/{uploaded_file.name}"
+                            upload_onedrive(nome_arquivo_original, uploaded_file.getbuffer(), token)
 
 # === CREDENCIAIS via st.secrets ===
 CLIENT_ID = st.secrets["CLIENT_ID"]
