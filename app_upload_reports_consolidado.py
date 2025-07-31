@@ -105,38 +105,30 @@ responsavel = st.text_input("Digite seu nome (responsável):")
         except Exception as e:
             st.error(f"Erro ao ler o Excel: {e}")
             df = None
-
         if df is not None:
             st.dataframe(df.head(5), use_container_width=True, height=200)
-
             # === RESUMO AUTOMÁTICO DA PLANILHA ===
             st.subheader("📊 Resumo dos dados")
             st.write(f"📏 Linhas: {df.shape[0]} | Colunas: {df.shape[1]}")
-
             colunas_nulas = df.columns[df.isnull().any()].tolist()
             if colunas_nulas:
                 st.warning(f"⚠️ Colunas com valores nulos: {', '.join(colunas_nulas)}")
             else:
                 st.success("✅ Nenhuma coluna com valores nulos.")
-
             import unicodedata
             def nome_invalido(col):
                 col_ascii = unicodedata.normalize("NFKD", col).encode("ASCII", "ignore").decode()
                 return not col_ascii.replace("_", "").isalnum()
-
             colunas_invalidas = [col for col in df.columns if nome_invalido(col)]
             if colunas_invalidas:
                 st.error(f"🚫 Nomes de colunas inválidos: {', '.join(colunas_invalidas)}")
             else:
                 st.success("✅ Todos os nomes de colunas são válidos.")
-
-            
 if st.button("📧 Enviar e Consolidar"):
     if not responsavel.strip():
         st.warning("⚠️ Informe o nome do responsável.")
     elif df is not None:
         with st.spinner("Consolidando e atualizando..."):
-
             # Lê o consolidado existente
             consolidado_nome = "Reports_Geral_Consolidado.xlsx"
             url = f"https://graph.microsoft.com/v1.0/sites/{{st.secrets['SITE_ID']}}/drives/{{st.secrets['DRIVE_ID']}}/root:/{PASTA}/{consolidado_nome}:/content"
@@ -147,10 +139,8 @@ if st.button("📧 Enviar e Consolidar"):
                 df_consolidado = pd.read_excel(BytesIO(r.content))
             else:
                 df_consolidado = pd.DataFrame()
-
             # Garante coluna "Responsável"
             df["Responsável"] = responsavel.strip()
-
             # Validação da coluna de data
             if "Data" not in df.columns or "Data" not in df_consolidado.columns:
                 st.error("❌ A planilha enviada e o consolidado precisam conter a coluna 'Data'.")
@@ -165,18 +155,15 @@ if st.button("📧 Enviar e Consolidar"):
                     )
                 ]
                 df_final = pd.concat([df_consolidado, df], ignore_index=True)
-
                 buffer = BytesIO()
                 df_final.to_excel(buffer, index=False)
                 buffer.seek(0)
-
                 sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
                 if sucesso:
                     st.success("✅ Consolidado atualizado com sucesso!")
                 else:
                     st.error(f"❌ Erro {status}")
                     st.code(resposta)
-
                 with st.spinner("Enviando..."):
                     sucesso, status, resposta = upload_onedrive(uploaded_file.name, uploaded_file.getbuffer(), token)
                     if sucesso:
@@ -184,12 +171,9 @@ if st.button("📧 Enviar e Consolidar"):
                     else:
                         st.error(f"❌ Erro {status}")
                         st.code(resposta)
-
-
 elif aba == "📁 Gerenciar arquivos":
     st.markdown("## 📂 Painel de Arquivos")
     st.divider()
-
     if token:
         arquivos = listar_arquivos(token)
         if arquivos:
