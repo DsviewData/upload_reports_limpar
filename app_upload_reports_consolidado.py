@@ -144,7 +144,11 @@ if st.button("📧 Enviar e Consolidar"):
             # Garante coluna "RESPONSÁVEL"
             df["RESPONSÁVEL"] = responsavel.strip()
             # Validação da coluna de data
-            if "DATA" not in df.columns or "DATA" not in df_consolidado.columns:
+            
+df.columns = df.columns.str.strip().str.upper()
+df_consolidado.columns = df_consolidado.columns.str.strip().str.upper()
+
+if "DATA" not in df.columns or "DATA" not in df_consolidado.columns:
                 st.error("❌ A planilha enviada e o consolidado precisam conter a coluna 'Data'.")
             else:
                 df["DATA"] = pd.to_datetime(df["DATA"])
