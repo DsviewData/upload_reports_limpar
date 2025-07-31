@@ -148,35 +148,35 @@ if st.button("📧 Enviar e Consolidar"):
 df.columns = df.columns.str.strip().str.upper()
 df_consolidado.columns = df_consolidado.columns.str.strip().str.upper()
 
-if "DATA" not in df.columns or "DATA" not in df_consolidado.columns:
-                st.error("❌ A planilha enviada e o consolidado precisam conter a coluna 'Data'.")
-        else:
-                df["DATA"] = pd.to_datetime(df["DATA"])
-                df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"])
-                datas_novas = df["DATA"].dt.normalize().unique()
-                df_consolidado = df_consolidado[
-                    ~(
-                        (df_consolidado["RESPONSÁVEL"] == responsavel.strip()) &
-                        (df_consolidado["DATA"].dt.normalize().isin(datas_novas))
-                    )
-                ]
-                df_final = pd.concat([df_consolidado, df], ignore_index=True)
-                buffer = BytesIO()
-                df_final.to_excel(buffer, index=False)
-                buffer.seek(0)
-                sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
-                if sucesso:
-                    st.success("✅ Consolidado atualizado com sucesso!")
-                else:
-                    st.error(f"❌ Erro {status}")
-                    st.code(resposta)
-                with st.spinner("Enviando..."):
-                    sucesso, status, resposta = upload_onedrive(uploaded_file.name, uploaded_file.getbuffer(), token)
-                    if sucesso:
-                        st.success("✅ Arquivo enviado com sucesso!")
-                    else:
-                        st.error(f"❌ Erro {status}")
-                        st.code(resposta)
+            if "DATA" not in df.columns or "DATA" not in df_consolidado.columns:
+            st.error("❌ A planilha enviada e o consolidado precisam conter a coluna 'Data'.")
+            else:
+            df["DATA"] = pd.to_datetime(df["DATA"])
+            df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"])
+            datas_novas = df["DATA"].dt.normalize().unique()
+            df_consolidado = df_consolidado[
+            ~(
+            (df_consolidado["RESPONSÁVEL"] == responsavel.strip()) &
+            (df_consolidado["DATA"].dt.normalize().isin(datas_novas))
+            )
+            ]
+            df_final = pd.concat([df_consolidado, df], ignore_index=True)
+            buffer = BytesIO()
+            df_final.to_excel(buffer, index=False)
+            buffer.seek(0)
+            sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
+            if sucesso:
+            st.success("✅ Consolidado atualizado com sucesso!")
+            else:
+            st.error(f"❌ Erro {status}")
+            st.code(resposta)
+            with st.spinner("Enviando..."):
+            sucesso, status, resposta = upload_onedrive(uploaded_file.name, uploaded_file.getbuffer(), token)
+            if sucesso:
+            st.success("✅ Arquivo enviado com sucesso!")
+            else:
+            st.error(f"❌ Erro {status}")
+            st.code(resposta)
 elif aba == "📁 Gerenciar arquivos":
     st.markdown("## 📂 Painel de Arquivos")
     st.divider()
