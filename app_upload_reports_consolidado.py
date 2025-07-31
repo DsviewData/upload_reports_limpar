@@ -3,7 +3,7 @@ import pandas as pd
 import requests
                             
                             # Salvar planilha enviada pelo usuário em subpasta no OneDrive
-                            from datetime import datetime
+from datetime import datetime
                             nome_pasta = f"Relatorios_Enviados/{responsavel.strip()}_{datetime.now().strftime('%Y-%m-%d')}"
                             nome_arquivo_original = f"{nome_pasta}/{uploaded_file.name}"
                             upload_onedrive(nome_arquivo_original, uploaded_file.getbuffer(), token)
