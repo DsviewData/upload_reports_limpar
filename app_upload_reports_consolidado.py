@@ -49,7 +49,7 @@ def upload_onedrive(nome_arquivo, conteudo_arquivo, token):
     response = requests.put(url, headers=headers, data=conteudo_arquivo)
     return response.status_code in [200, 201], response.status_code, response.text
 
-# === GERENCIAMENTO DE ARQUIVOS ===
+    # === GERENCIAMENTO DE ARQUIVOS ===
 def listar_arquivos(token):
     url = f"https://graph.microsoft.com/v1.0/users/{EMAIL_ONEDRIVE}/drive/root:/{PASTA}:/children"
     headers = {"Authorization": f"Bearer {token}"}
@@ -67,8 +67,8 @@ def deletar_arquivo(token, file_id):
     r = requests.delete(url, headers=headers)
     return r.status_code == 204
 
-# === INTERFACE STREAMLIT ===
-st.set_page_config(page_title="Upload e Gestão de Planilhas", layout="wide")
+    # === INTERFACE STREAMLIT ===
+    st.set_page_config(page_title="Upload e Gestão de Planilhas", layout="wide")
 
 
 # === CABEÇALHO COM ESTILO ===
@@ -99,7 +99,7 @@ if aba == "📤 Upload de planilha":
 
     if uploaded_file:
     try:
-    xls = pd.ExcelFile(uploaded_file)
+        xls = pd.ExcelFile(uploaded_file)
     sheets = xls.sheet_names
     sheet = st.selectbox("Selecione a aba:", sheets) if len(sheets) > 1 else sheets[0]
     df = pd.read_excel(uploaded_file, sheet_name=sheet)
@@ -131,7 +131,7 @@ if st.button("📧 Enviar e Consolidar"):
     st.warning("⚠️ Informe o nome do responsável.")
     elif df is not None:
     with st.spinner("Consolidando e atualizando..."):
-    # Lê o consolidado existente
+        # Lê o consolidado existente
     consolidado_nome = "Reports_Geral_Consolidado.xlsx"
     url = f"https://graph.microsoft.com/v1.0/sites/{{st.secrets['SITE_ID']}}/drives/{{st.secrets['DRIVE_ID']}}/root:/{PASTA}/{consolidado_nome}:/content"
     headers = { "Authorization": f"Bearer {token}" }
@@ -146,7 +146,7 @@ if st.button("📧 Enviar e Consolidar"):
     df["RESPONSÁVEL"] = responsavel.strip()
     # Validação da coluna de data
     
-df.columns = df.columns.str.strip().str.upper()
+    df.columns = df.columns.str.strip().str.upper()
 df_consolidado.columns = df_consolidado.columns.str.strip().str.upper()
 
     if "DATA" not in df.columns or "DATA" not in df_consolidado.columns:
@@ -188,9 +188,9 @@ elif aba == "📁 Gerenciar arquivos":
     with st.expander(f"📄 {arq['name']}"):
         col1, col2 = st.columns([4, 1])
         with col1:
-    st.markdown(f"[🔗 Acessar arquivo]({arq['@microsoft.graph.downloadUrl']})")
-    st.write(f"Tamanho: {round(arq['size']/1024, 2)} KB")
+        st.markdown(f"[🔗 Acessar arquivo]({arq['@microsoft.graph.downloadUrl']})")
+        st.write(f"Tamanho: {round(arq['size']/1024, 2)} KB")
     else:
-    st.info("Nenhum arquivo encontrado na pasta uploads.")
+        st.info("Nenhum arquivo encontrado na pasta uploads.")
     else:
-    st.error("Erro ao autenticar.")
+        st.error("Erro ao autenticar.")
