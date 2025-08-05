@@ -74,25 +74,151 @@ def upload_onedrive(nome_arquivo, conteudo_arquivo, token):
     except Exception as e:
         return False, 500, f"Erro interno: {str(e)}"
 
-# === GERENCIAMENTO DE ARQUIVOS ===
-def listar_arquivos(token):
-    """Lista arquivos na pasta do OneDrive"""
-    try:
-        # Usando a mesma API base para consistência
-        url = f"https://graph.microsoft.com/v1.0/sites/{st.secrets['SITE_ID']}/drives/{st.secrets['DRIVE_ID']}/root:/{PASTA}:/children"
-        headers = {"Authorization": f"Bearer {token}"}
-        r = requests.get(url, headers=headers)
+
+
+# === FUNÇÕES DE CONSOLIDAÇÃO ===
+def validar_dados_enviados(df, responsavel):
+    """Valida os dados enviados pelo usuário"""
+    erros = []
+    
+    # Validar responsável
+    if not responsavel or not responsavel.strip():
+        erros.append("⚠️ O nome do responsável é obrigatório")
+    
+    # Validar se existe coluna DATA
+    if "DATA" not in df.columns:
+        erros.append("⚠️ A planilha deve conter uma coluna 'DATA'")
+    else:
+        # Validar se as datas são válidas
+        df_temp = df.copy()
+        df_temp["DATA"] = pd.to_datetime(df_temp["DATA"], errors="coerce")
+        datas_validas = df_temp["DATA"].notna().sum()
         
-        if r.status_code == 200:
-            return r.json().get("value", [])
-        else:
-            st.error(f"Erro ao listar arquivos: {r.status_code}")
-            st.code(r.text)
-            return []
+        if datas_validas == 0:
+            erros.append("⚠️ Nenhuma data válida encontrada na coluna 'DATA'")
+        elif datas_validas < len(df):
+            erros.append(f"⚠️ {len(df) - datas_validas} linhas com datas inválidas serão ignoradas")
+    
+    return erros
+
+def processar_consolidacao(df_novo, responsavel, token):
+    """Processa a consolidação dos dados - Remove dados do responsável apenas para as datas enviadas"""
+    consolidado_nome = "Reports_Geral_Consolidado.xlsx"
+    
+    # 1. Baixar arquivo consolidado existente
+    url = f"https://graph.microsoft.com/v1.0/sites/{st.secrets['SITE_ID']}/drives/{st.secrets['DRIVE_ID']}/root:/{PASTA}/{consolidado_nome}:/content"
+    headers = {"Authorization": f"Bearer {token}"}
+    r = requests.get(url, headers=headers)
+    
+    if r.status_code == 200:
+        try:
+            df_consolidado = pd.read_excel(BytesIO(r.content))
+            df_consolidado.columns = df_consolidado.columns.str.strip().str.upper()
+            st.info("📂 Arquivo consolidado existente carregado")
+        except Exception as e:
+            st.warning(f"⚠️ Erro ao ler arquivo consolidado existente: {e}")
+            df_consolidado = pd.DataFrame()
+    else:
+        df_consolidado = pd.DataFrame()
+        st.info("📂 Criando novo arquivo consolidado")
+
+    # 2. Preparar dados novos
+    df_novo = df_novo.copy()
+    df_novo["RESPONSÁVEL"] = responsavel.strip()
+    df_novo.columns = df_novo.columns.str.strip().str.upper()
+    
+    # 3. Converter e validar datas
+    df_novo["DATA"] = pd.to_datetime(df_novo["DATA"], errors="coerce")
+    df_novo = df_novo.dropna(subset=["DATA"])
+    
+    if df_novo.empty:
+        st.error("❌ Nenhum registro válido para consolidar")
+        return False
+    
+    # 4. Identificar datas da planilha enviada
+    datas_enviadas = df_novo["DATA"].dt.normalize().unique()
+    st.info(f"📅 Datas na planilha enviada: {len(datas_enviadas)} dias únicos")
+    
+    # 5. Processar consolidado existente se houver
+    if not df_consolidado.empty:
+        # Converter datas do consolidado
+        if "DATA" in df_consolidado.columns:
+            df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
+            df_consolidado = df_consolidado.dropna(subset=["DATA"])
+        
+        # EXCLUIR registros do mesmo responsável APENAS para as datas enviadas
+        registros_antes = len(df_consolidado)
+        
+        if "RESPONSÁVEL" in df_consolidado.columns:
+            # Filtro: Remove apenas registros do mesmo responsável E das mesmas datas
+            df_consolidado = df_consolidado[
+                ~(
+                    (df_consolidado["RESPONSÁVEL"].str.strip() == responsavel.strip()) &
+                    (df_consolidado["DATA"].dt.normalize().isin(datas_enviadas))
+                )
+            ]
             
+            registros_removidos = registros_antes - len(df_consolidado)
+            if registros_removidos > 0:
+                st.info(f"🗑️ Excluídos {registros_removidos} registros do responsável '{responsavel}' para as datas enviadas")
+            else:
+                st.info(f"ℹ️ Nenhum registro anterior encontrado do responsável '{responsavel}' para essas datas")
+        
+        # INSERIR os novos dados
+        df_final = pd.concat([df_consolidado, df_novo], ignore_index=True)
+    else:
+        # Se não há consolidado, usar apenas os novos dados
+        df_final = df_novo.copy()
+        st.info("📂 Primeiro envio - criando arquivo consolidado")
+    
+    # 6. Ordenar por data e responsável
+    df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"]).reset_index(drop=True)
+    
+    # 7. Preparar arquivo para upload
+    buffer = BytesIO()
+    df_final.to_excel(buffer, index=False, sheet_name="Dados")
+    buffer.seek(0)
+    
+    # 8. Salvar cópia do arquivo enviado
+    salvar_arquivo_enviado(df_novo, responsavel, token)
+    
+    # 9. Fazer upload do consolidado
+    sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
+    
+    if sucesso:
+        st.success("✅ Consolidação realizada com sucesso!")
+        st.info(f"📊 Total de registros no consolidado: {len(df_final)}")
+        st.info(f"📊 Registros inseridos: {len(df_novo)}")
+        
+        # Mostrar resumo das datas processadas
+        data_min = df_novo["DATA"].min().strftime("%d/%m/%Y")
+        data_max = df_novo["DATA"].max().strftime("%d/%m/%Y")
+        st.info(f"📅 Período processado: {data_min} até {data_max}")
+        
+        return True
+    else:
+        st.error(f"❌ Erro no upload: {status}")
+        st.code(resposta)
+        return False
+
+def salvar_arquivo_enviado(df, responsavel, token):
+    """Salva uma cópia do arquivo enviado pelo responsável"""
+    try:
+        if not df.empty and "DATA" in df.columns:
+            data_base = df["DATA"].min()
+            nome_pasta = f"Relatorios_Enviados/{data_base.strftime('%Y-%m')}"
+            timestamp = datetime.now().strftime('%d-%m-%Y_%Hh%M')
+            nome_arquivo = f"{nome_pasta}/{responsavel.strip()}_{timestamp}.xlsx"
+            
+            buffer_envio = BytesIO()
+            df.to_excel(buffer_envio, index=False, sheet_name="Dados")
+            buffer_envio.seek(0)
+            
+            sucesso, _, _ = upload_onedrive(nome_arquivo, buffer_envio.read(), token)
+            if sucesso:
+                st.info(f"💾 Cópia salva em: {nome_arquivo}")
     except Exception as e:
-        st.error(f"Erro na requisição: {str(e)}")
-        return []
+        st.warning(f"⚠️ Não foi possível salvar cópia do arquivo: {e}")
 
 # === INTERFACE STREAMLIT ===
 st.set_page_config(page_title="Upload e Gestão de Planilhas", layout="wide")
@@ -108,7 +234,9 @@ st.markdown(
 )
 
 # Sidebar navigation
-aba = st.sidebar.radio("📂 Navegar", ["📤 Upload de planilha", "📁 Gerenciar arquivos"])
+st.sidebar.markdown("### 📤 Upload de Planilhas")
+st.sidebar.markdown("Sistema de consolidação de relatórios")
+
 token = obter_token()
 
 # Verificar se o token foi obtido com sucesso
@@ -116,144 +244,77 @@ if not token:
     st.error("❌ Não foi possível autenticar. Verifique as credenciais.")
     st.stop()
 
-if aba == "📤 Upload de planilha":
-    st.markdown("## 📤 Upload de Planilha Excel")
-    st.divider()
+st.markdown("## 📤 Upload de Planilha Excel")
+st.divider()
 
-    uploaded_file = st.file_uploader("Escolha um arquivo Excel", type=["xlsx"])
-    responsavel = st.text_input("Digite seu nome (responsável):")
+uploaded_file = st.file_uploader("Escolha um arquivo Excel", type=["xlsx"])
 
-    if uploaded_file:
-        try:
-            xls = pd.ExcelFile(uploaded_file)
-            sheets = xls.sheet_names
-            sheet = st.selectbox("Selecione a aba:", sheets) if len(sheets) > 1 else sheets[0]
-            df = pd.read_excel(uploaded_file, sheet_name=sheet)
-            df.columns = df.columns.str.strip().str.upper()
-        except Exception as e:
-            st.error(f"Erro ao ler o Excel: {e}")
-            df = None
+# Campo obrigatório para responsável
+responsavel = st.text_input(
+    "Digite seu nome (responsável): *", 
+    placeholder="Ex: João Silva",
+    help="Este campo é obrigatório"
+)
 
-        if df is not None:
-            st.dataframe(df.head(5), use_container_width=True, height=200)
+if uploaded_file:
+    try:
+        xls = pd.ExcelFile(uploaded_file)
+        sheets = xls.sheet_names
+        sheet = st.selectbox("Selecione a aba:", sheets) if len(sheets) > 1 else sheets[0]
+        df = pd.read_excel(uploaded_file, sheet_name=sheet)
+        df.columns = df.columns.str.strip().str.upper()
+        
+        st.success(f"✅ Arquivo carregado: {uploaded_file.name}")
+    except Exception as e:
+        st.error(f"❌ Erro ao ler o Excel: {e}")
+        df = None
 
-            st.subheader("📊 Resumo dos dados")
-            st.write(f"📏 Linhas: {df.shape[0]} | Colunas: {df.shape[1]}")
+    if df is not None:
+        st.subheader("👀 Prévia dos dados")
+        st.dataframe(df.head(5), use_container_width=True, height=200)
 
-            # Verificar colunas com valores nulos
-            colunas_nulas = df.columns[df.isnull().any()].tolist()
-            if colunas_nulas:
-                st.warning(f"⚠️ Colunas com valores nulos: {', '.join(colunas_nulas)}")
-            else:
-                st.success("✅ Nenhuma coluna com valores nulos.")
+        st.subheader("📊 Resumo dos dados")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Linhas", df.shape[0])
+        with col2:
+            st.metric("Colunas", df.shape[1])
 
-            if st.button("📧 Enviar e Consolidar"):
-                if not responsavel.strip():
-                    st.warning("⚠️ Informe o nome do responsável.")
-                else:
-                    with st.spinner("Consolidando e atualizando..."):
-                        consolidado_nome = "Reports_Geral_Consolidado.xlsx"
-                        
-                        # Baixar arquivo consolidado existente
-                        url = f"https://graph.microsoft.com/v1.0/sites/{st.secrets['SITE_ID']}/drives/{st.secrets['DRIVE_ID']}/root:/{PASTA}/{consolidado_nome}:/content"
-                        headers = {"Authorization": f"Bearer {token}"}
-                        r = requests.get(url, headers=headers)
-                        
-                        if r.status_code == 200:
-                            try:
-                                df_consolidado = pd.read_excel(BytesIO(r.content))
-                                df_consolidado.columns = df_consolidado.columns.str.strip().str.upper()
-                            except Exception as e:
-                                st.error(f"❌ Erro ao ler arquivo consolidado: {e}")
-                                df_consolidado = pd.DataFrame()
-                        else:
-                            df_consolidado = pd.DataFrame()
-
-                        # Adicionar responsável aos dados enviados
-                        df["RESPONSÁVEL"] = responsavel.strip()
-
-                        # Normalizar nomes das colunas
-                        df.columns = df.columns.str.strip().str.upper()
-                        if not df_consolidado.empty:
-                            df_consolidado.columns = df_consolidado.columns.str.strip().str.upper()
-
-                        # Verificar se existe coluna DATA
-                        if "DATA" not in df.columns:
-                            st.error("❌ A planilha enviada precisa conter a coluna 'DATA'.")
-                        elif not df_consolidado.empty and "DATA" not in df_consolidado.columns:
-                            st.error("❌ O arquivo consolidado existente não contém a coluna 'DATA'.")
-                        else:
-                            # Processar datas da planilha enviada
-                            df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
-                            df = df.dropna(subset=["DATA"])
-                            
-                            if df.empty:
-                                st.error("❌ Nenhuma data válida encontrada na planilha enviada.")
-                            else:
-                                # Processar consolidado apenas se não estiver vazio
-                                if not df_consolidado.empty:
-                                    df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
-                                    df_consolidado = df_consolidado.dropna(subset=["DATA"])
-                                
-                                # Remover dados existentes do mesmo responsável para as mesmas datas
-                                datas_novas = df["DATA"].dt.normalize().unique()
-                                if not df_consolidado.empty:
-                                    df_consolidado = df_consolidado[
-                                        ~(
-                                            (df_consolidado["RESPONSÁVEL"] == responsavel.strip()) &
-                                            (df_consolidado["DATA"].dt.normalize().isin(datas_novas))
-                                        )
-                                    ]
-                                
-                                # Consolidar dados
-                                df_final = pd.concat([df_consolidado, df], ignore_index=True)
-                                
-                                # Preparar arquivo para upload
-                                buffer = BytesIO()
-                                df_final.to_excel(buffer, index=False, sheet_name="Dados")
-                                buffer.seek(0)
-                                
-                                # Salvar planilha enviada pelo responsável
-                                try:
-                                    if not df.empty and "DATA" in df.columns:
-                                        data_base = df["DATA"].min()
-                                        nome_pasta = f"Relatorios_Enviados/{data_base.strftime('%Y-%m')}"
-                                        nome_arquivo = f"{nome_pasta}/{responsavel.strip()}_{datetime.now().strftime('%d-%m-%Y_%Hh%M')}.xlsx"
-                                        
-                                        buffer_envio = BytesIO()
-                                        df.to_excel(buffer_envio, index=False)
-                                        buffer_envio.seek(0)
-                                        
-                                        upload_onedrive(nome_arquivo, buffer_envio.read(), token)
-                                except Exception as e:
-                                    st.warning(f"⚠️ Não foi possível salvar o arquivo enviado: {e}")
-
-                                # Fazer upload do consolidado
-                                sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
-                                
-                                if sucesso:
-                                    st.success("✅ Consolidado atualizado com sucesso!")
-                                    st.balloons()
-                                else:
-                                    st.error(f"❌ Erro {status}")
-                                    st.code(resposta)
-
-elif aba == "📁 Gerenciar arquivos":
-    st.markdown("## 📂 Painel de Arquivos")
-    st.divider()
-    
-    if token:
-        arquivos = listar_arquivos(token)
-        if arquivos:
-            for arq in arquivos:
-                with st.expander(f"📄 {arq['name']}"):
-                    col1, col2 = st.columns([4, 1])
-                    with col1:
-                        st.markdown(f"[🔗 Acessar arquivo]({arq['@microsoft.graph.downloadUrl']})")
-                        st.write(f"**Tamanho:** {round(arq['size']/1024, 2)} KB")
-                        if 'lastModifiedDateTime' in arq:
-                            st.write(f"**Modificado em:** {arq['lastModifiedDateTime'][:10]}")
+        # Verificar colunas com valores nulos
+        colunas_nulas = df.columns[df.isnull().any()].tolist()
+        if colunas_nulas:
+            st.warning(f"⚠️ Colunas com valores nulos: {', '.join(colunas_nulas)}")
         else:
-            st.info("📁 Nenhum arquivo encontrado na pasta.")
-    else:
-        st.error("❌ Erro ao autenticar com Microsoft Graph API.")
+            st.success("✅ Nenhuma coluna com valores nulos.")
+
+        # Validações antes do envio
+        st.subheader("🔍 Validações")
+        erros = validar_dados_enviados(df, responsavel)
+        
+        if erros:
+            for erro in erros:
+                st.error(erro)
+        else:
+            st.success("✅ Todos os dados estão válidos para consolidação")
+
+        # Botão de envio
+        if st.button("📧 Consolidar Dados", type="primary", disabled=bool(erros)):
+            if erros:
+                st.error("❌ Corrija os erros acima antes de prosseguir")
+            else:
+                with st.spinner("🔄 Processando consolidação..."):
+                    sucesso = processar_consolidacao(df, responsavel, token)
+                    if sucesso:
+                        st.balloons()
+
+# Rodapé com informações
+st.divider()
+st.markdown(
+    """
+    <div style="text-align: center; color: #666; font-size: 0.8em;">
+        DSView BI - Sistema de Consolidação de Relatórios<br>
+        ⚠️ Certifique-se de que sua planilha contenha a coluna 'DATA' e informe o responsável
+    </div>
+    """,
+    unsafe_allow_html=True
+)
