@@ -1,285 +1,259 @@
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import requests
 from datetime import datetime
-import hashlib
+from io import BytesIO
+from msal import ConfidentialClientApplication
+import unicodedata
 
-def gerar_hash_registro(row, colunas_chave):
-    """Gera hash único para um registro baseado nas colunas-chave"""
-    valores = []
-    for col in colunas_chave:
-        if col in row.index:
-            valor = str(row[col]).strip().upper() if pd.notna(row[col]) else "NULL"
-            valores.append(valor)
-    
-    texto_concatenado = "|".join(valores)
-    return hashlib.md5(texto_concatenado.encode()).hexdigest()
+# === CREDENCIAIS via st.secrets ===
+CLIENT_ID = st.secrets["CLIENT_ID"]
+CLIENT_SECRET = st.secrets["CLIENT_SECRET"]
+TENANT_ID = st.secrets["TENANT_ID"]
+EMAIL_ONEDRIVE = st.secrets["EMAIL_ONEDRIVE"]
+PASTA = "Documentos Compartilhados/LimparAuto/FontedeDados"
 
-def definir_colunas_chave(df):
-    """Define colunas-chave para identificação de registros únicos"""
-    colunas_obrigatorias = ["DATA", "RESPONSÁVEL"]
-    colunas_opcionais = []
-    
-    # Buscar por colunas que podem ser identificadores únicos
-    colunas_candidatas = [
-        "ID", "CODIGO", "NUMERO", "REFERENCIA", "CLIENTE", 
-        "PRODUTO", "SERVICO", "CONTA", "CPF", "CNPJ"
-    ]
-    
-    for col in df.columns:
-        col_upper = col.upper()
-        if any(candidata in col_upper for candidata in colunas_candidatas):
-            colunas_opcionais.append(col)
-    
-    # Priorizar colunas com alta cardinalidade
-    for col in df.columns:
-        if col not in colunas_obrigatorias and col not in colunas_opcionais:
-            if df[col].nunique() / len(df) > 0.8:  # Alta variabilidade
-                colunas_opcionais.append(col)
-    
-    return colunas_obrigatorias + colunas_opcionais[:3]  # Máximo 5 colunas-chave
-
-def analisar_duplicatas_inteligente(df_novo, df_consolidado, responsavel):
-    """Análise inteligente de duplicatas e conflitos"""
-    
-    # 1. Definir colunas-chave para comparação
-    colunas_chave = definir_colunas_chave(df_novo)
-    
-    # 2. Gerar hashes para registros novos
-    df_novo_copy = df_novo.copy()
-    df_novo_copy['HASH_REGISTRO'] = df_novo_copy.apply(
-        lambda row: gerar_hash_registro(row, colunas_chave), axis=1
-    )
-    
-    # 3. Gerar hashes para registros consolidados (se existir)
-    if not df_consolidado.empty:
-        df_consolidado_copy = df_consolidado.copy()
-        df_consolidado_copy['HASH_REGISTRO'] = df_consolidado_copy.apply(
-            lambda row: gerar_hash_registro(row, colunas_chave), axis=1
-        )
-    else:
-        df_consolidado_copy = pd.DataFrame()
-    
-    # 4. Análise de duplicatas
-    resultado_analise = {
-        'registros_novos': len(df_novo_copy),
-        'registros_consolidados': len(df_consolidado_copy),
-        'colunas_chave_usadas': colunas_chave,
-        'duplicatas_internas': 0,
-        'conflitos_encontrados': 0,
-        'registros_a_substituir': 0,
-        'registros_realmente_novos': 0,
-        'detalhes_conflitos': []
-    }
-    
-    # 5. Verificar duplicatas internas no arquivo novo
-    duplicatas_internas = df_novo_copy['HASH_REGISTRO'].duplicated()
-    resultado_analise['duplicatas_internas'] = duplicatas_internas.sum()
-    
-    if duplicatas_internas.any():
-        st.warning(f"⚠️ {duplicatas_internas.sum()} registros duplicados encontrados no arquivo enviado")
-        # Remover duplicatas internas, mantendo o último
-        df_novo_copy = df_novo_copy.drop_duplicates(subset=['HASH_REGISTRO'], keep='last')
-    
-    # 6. Comparar com dados consolidados
-    if not df_consolidado_copy.empty:
-        # Identificar registros que já existem
-        hashes_existentes = set(df_consolidado_copy['HASH_REGISTRO'])
-        hashes_novos = set(df_novo_copy['HASH_REGISTRO'])
-        
-        # Registros que são exatamente iguais (sem conflito)
-        registros_identicos = hashes_novos.intersection(hashes_existentes)
-        
-        # Registros realmente novos
-        registros_realmente_novos = hashes_novos - hashes_existentes
-        resultado_analise['registros_realmente_novos'] = len(registros_realmente_novos)
-        
-        # Verificar conflitos por responsável/data (lógica adicional)
-        conflitos_responsavel_data = verificar_conflitos_responsavel_data(
-            df_novo_copy, df_consolidado_copy, responsavel
-        )
-        
-        resultado_analise['conflitos_encontrados'] = len(conflitos_responsavel_data)
-        resultado_analise['detalhes_conflitos'] = conflitos_responsavel_data
-        
-        # Registros a serem substituídos (mesmo responsável, mesma data, dados diferentes)
-        resultado_analise['registros_a_substituir'] = len(conflitos_responsavel_data)
-        
-    else:
-        resultado_analise['registros_realmente_novos'] = len(df_novo_copy)
-    
-    return df_novo_copy, resultado_analise
-
-def verificar_conflitos_responsavel_data(df_novo, df_consolidado, responsavel):
-    """Verifica conflitos específicos por responsável e data"""
-    conflitos = []
-    
-    # Filtrar apenas registros do mesmo responsável no consolidado
-    df_mesmo_responsavel = df_consolidado[
-        df_consolidado['RESPONSÁVEL'] == responsavel
-    ].copy()
-    
-    if df_mesmo_responsavel.empty:
-        return conflitos
-    
-    # Comparar por data
-    for _, row_novo in df_novo.iterrows():
-        data_novo = pd.to_datetime(row_novo['DATA']).normalize()
-        
-        # Buscar registros na mesma data
-        registros_mesma_data = df_mesmo_responsavel[
-            pd.to_datetime(df_mesmo_responsavel['DATA']).dt.normalize() == data_novo
-        ]
-        
-        for _, row_existente in registros_mesma_data.iterrows():
-            if row_novo['HASH_REGISTRO'] != row_existente['HASH_REGISTRO']:
-                conflito = {
-                    'data': data_novo.strftime('%d/%m/%Y'),
-                    'responsavel': responsavel,
-                    'tipo': 'dados_diferentes_mesma_data',
-                    'registro_novo': row_novo.to_dict(),
-                    'registro_existente': row_existente.to_dict()
-                }
-                conflitos.append(conflito)
-    
-    return conflitos
-
-def processar_consolidacao_inteligente(df_novo, df_consolidado, responsavel):
-    """Processamento inteligente de consolidação"""
-    
+# === AUTENTICAÇÃO ===
+def obter_token():
+    """Obtém token de acesso para Microsoft Graph API"""
     try:
-        # 1. Preparar dados
-        df_novo = df_novo.copy()
-        df_novo["RESPONSÁVEL"] = responsavel.strip()
-        df_novo.columns = df_novo.columns.str.strip().str.upper()
-        
-        if not df_consolidado.empty:
-            df_consolidado.columns = df_consolidado.columns.str.strip().str.upper()
-        
-        # 2. Processar datas
-        df_novo["DATA"] = pd.to_datetime(df_novo["DATA"], errors="coerce")
-        df_novo = df_novo.dropna(subset=["DATA"])
-        
-        if df_novo.empty:
-            return None, None, "❌ Nenhuma data válida encontrada na planilha enviada."
-        
-        if not df_consolidado.empty:
-            df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
-            df_consolidado = df_consolidado.dropna(subset=["DATA"])
-        
-        # 3. Análise inteligente de duplicatas
-        df_novo_processado, analise = analisar_duplicatas_inteligente(
-            df_novo, df_consolidado, responsavel
+        app = ConfidentialClientApplication(
+            CLIENT_ID,
+            authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+            client_credential=CLIENT_SECRET
         )
+        result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+        token = result.get("access_token")
+        if not token:
+            st.error("❌ Falha na autenticação - Token não obtido")
+        return token
+    except Exception as e:
+        st.error(f"❌ Erro na autenticação: {str(e)}")
+        return None
+
+# === UPLOAD E BACKUP ===
+def mover_arquivo_existente(nome_arquivo, token):
+    """Move arquivo existente para backup antes de substituir"""
+    try:
+        url = f"https://graph.microsoft.com/v1.0/sites/{st.secrets['SITE_ID']}/drives/{st.secrets['DRIVE_ID']}/root:/{PASTA}/{nome_arquivo}"
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.get(url, headers=headers)
         
-        # 4. Processar conforme análise
-        if analise['conflitos_encontrados'] > 0:
-            # Remover registros conflitantes do consolidado
-            df_consolidado_limpo = remover_registros_conflitantes(
-                df_consolidado, analise['detalhes_conflitos']
-            )
-        else:
-            df_consolidado_limpo = df_consolidado.copy()
+        if response.status_code == 200:
+            file_id = response.json().get("id")
+            timestamp = datetime.now().strftime("%Y-%m-%d_%Hh%M")
+            novo_nome = nome_arquivo.replace(".xlsx", f"_backup_{timestamp}.xlsx")
+            
+            patch_url = f"https://graph.microsoft.com/v1.0/sites/{st.secrets['SITE_ID']}/drives/{st.secrets['DRIVE_ID']}/items/{file_id}"
+            patch_body = {"name": novo_nome}
+            patch_headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+            patch_response = requests.patch(patch_url, headers=patch_headers, json=patch_body)
+            
+            if patch_response.status_code not in [200, 201]:
+                st.warning(f"⚠️ Aviso: Não foi possível criar backup do arquivo existente")
+                
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao processar backup: {str(e)}")
+
+def upload_onedrive(nome_arquivo, conteudo_arquivo, token):
+    """Faz upload de arquivo para OneDrive"""
+    try:
+        mover_arquivo_existente(nome_arquivo, token)
         
-        # 5. Consolidar dados
-        # Remover coluna de hash antes da consolidação final
-        df_novo_final = df_novo_processado.drop('HASH_REGISTRO', axis=1)
-        
-        if not df_consolidado_limpo.empty and 'HASH_REGISTRO' in df_consolidado_limpo.columns:
-            df_consolidado_limpo = df_consolidado_limpo.drop('HASH_REGISTRO', axis=1)
-        
-        df_final = pd.concat([df_consolidado_limpo, df_novo_final], ignore_index=True)
-        
-        # 6. Ordenar e limpar
-        df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"]).reset_index(drop=True)
-        
-        return df_final, analise, None
+        url = f"https://graph.microsoft.com/v1.0/sites/{st.secrets['SITE_ID']}/drives/{st.secrets['DRIVE_ID']}/root:/{PASTA}/{nome_arquivo}:/content"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/octet-stream"
+        }
+        response = requests.put(url, headers=headers, data=conteudo_arquivo)
+        return response.status_code in [200, 201], response.status_code, response.text
         
     except Exception as e:
-        return None, None, f"❌ Erro na consolidação inteligente: {str(e)}"
+        return False, 500, f"Erro interno: {str(e)}"
 
-def remover_registros_conflitantes(df_consolidado, conflitos):
-    """Remove registros conflitantes do DataFrame consolidado"""
-    df_limpo = df_consolidado.copy()
-    
-    for conflito in conflitos:
-        # Encontrar e remover o registro existente que está em conflito
-        registro_existente = conflito['registro_existente']
+# === GERENCIAMENTO DE ARQUIVOS ===
+def listar_arquivos(token):
+    """Lista arquivos na pasta do OneDrive"""
+    try:
+        # Usando a mesma API base para consistência
+        url = f"https://graph.microsoft.com/v1.0/sites/{st.secrets['SITE_ID']}/drives/{st.secrets['DRIVE_ID']}/root:/{PASTA}:/children"
+        headers = {"Authorization": f"Bearer {token}"}
+        r = requests.get(url, headers=headers)
         
-        # Criar máscara para encontrar o registro exato
-        mascara = True
-        for coluna, valor in registro_existente.items():
-            if coluna in df_limpo.columns and coluna != 'HASH_REGISTRO':
-                if pd.notna(valor):
-                    mascara = mascara & (df_limpo[coluna] == valor)
+        if r.status_code == 200:
+            return r.json().get("value", [])
+        else:
+            st.error(f"Erro ao listar arquivos: {r.status_code}")
+            st.code(r.text)
+            return []
+            
+    except Exception as e:
+        st.error(f"Erro na requisição: {str(e)}")
+        return []
+
+# === INTERFACE STREAMLIT ===
+st.set_page_config(page_title="Upload e Gestão de Planilhas", layout="wide")
+
+st.markdown(
+    '''
+    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
+        <img src="logo_horizontal.png" width="180"/>
+        <h2 style="margin: 0; color: #2E8B57;">DSView BI – Upload de Planilhas</h2>
+    </div>
+    ''',
+    unsafe_allow_html=True
+)
+
+# Sidebar navigation
+aba = st.sidebar.radio("📂 Navegar", ["📤 Upload de planilha", "📁 Gerenciar arquivos"])
+token = obter_token()
+
+# Verificar se o token foi obtido com sucesso
+if not token:
+    st.error("❌ Não foi possível autenticar. Verifique as credenciais.")
+    st.stop()
+
+if aba == "📤 Upload de planilha":
+    st.markdown("## 📤 Upload de Planilha Excel")
+    st.divider()
+
+    uploaded_file = st.file_uploader("Escolha um arquivo Excel", type=["xlsx"])
+    responsavel = st.text_input("Digite seu nome (responsável):")
+
+    if uploaded_file:
+        try:
+            xls = pd.ExcelFile(uploaded_file)
+            sheets = xls.sheet_names
+            sheet = st.selectbox("Selecione a aba:", sheets) if len(sheets) > 1 else sheets[0]
+            df = pd.read_excel(uploaded_file, sheet_name=sheet)
+            df.columns = df.columns.str.strip().str.upper()
+        except Exception as e:
+            st.error(f"Erro ao ler o Excel: {e}")
+            df = None
+
+        if df is not None:
+            st.dataframe(df.head(5), use_container_width=True, height=200)
+
+            st.subheader("📊 Resumo dos dados")
+            st.write(f"📏 Linhas: {df.shape[0]} | Colunas: {df.shape[1]}")
+
+            # Verificar colunas com valores nulos
+            colunas_nulas = df.columns[df.isnull().any()].tolist()
+            if colunas_nulas:
+                st.warning(f"⚠️ Colunas com valores nulos: {', '.join(colunas_nulas)}")
+            else:
+                st.success("✅ Nenhuma coluna com valores nulos.")
+
+            if st.button("📧 Enviar e Consolidar"):
+                if not responsavel.strip():
+                    st.warning("⚠️ Informe o nome do responsável.")
                 else:
-                    mascara = mascara & df_limpo[coluna].isna()
-        
-        # Remover registros que correspondem à máscara
-        df_limpo = df_limpo[~mascara]
-    
-    return df_limpo
+                    with st.spinner("Consolidando e atualizando..."):
+                        consolidado_nome = "Reports_Geral_Consolidado.xlsx"
+                        
+                        # Baixar arquivo consolidado existente
+                        url = f"https://graph.microsoft.com/v1.0/sites/{st.secrets['SITE_ID']}/drives/{st.secrets['DRIVE_ID']}/root:/{PASTA}/{consolidado_nome}:/content"
+                        headers = {"Authorization": f"Bearer {token}"}
+                        r = requests.get(url, headers=headers)
+                        
+                        if r.status_code == 200:
+                            try:
+                                df_consolidado = pd.read_excel(BytesIO(r.content))
+                                df_consolidado.columns = df_consolidado.columns.str.strip().str.upper()
+                            except Exception as e:
+                                st.error(f"❌ Erro ao ler arquivo consolidado: {e}")
+                                df_consolidado = pd.DataFrame()
+                        else:
+                            df_consolidado = pd.DataFrame()
 
-def exibir_relatorio_consolidacao(analise):
-    """Exibe relatório detalhado da consolidação"""
-    
-    st.markdown("### 📊 Relatório de Consolidação")
-    
-    # Métricas principais
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("📥 Registros Enviados", analise['registros_novos'])
-    
-    with col2:
-        st.metric("📁 No Consolidado", analise['registros_consolidados'])
-    
-    with col3:
-        st.metric("✅ Realmente Novos", analise['registros_realmente_novos'])
-    
-    with col4:
-        st.metric("🔄 Substituições", analise['registros_a_substituir'])
-    
-    # Detalhes adicionais
-    if analise['duplicatas_internas'] > 0:
-        st.warning(f"⚠️ **{analise['duplicatas_internas']} duplicatas internas** foram removidas do arquivo enviado")
-    
-    if analise['conflitos_encontrados'] > 0:
-        st.info(f"🔄 **{analise['conflitos_encontrados']} registros** serão substituídos por conterem dados diferentes para as mesmas chaves")
-        
-        with st.expander("📋 Detalhes dos Conflitos"):
-            for i, conflito in enumerate(analise['detalhes_conflitos']):
-                st.write(f"**Conflito {i+1}:**")
-                st.write(f"- Data: {conflito['data']}")
-                st.write(f"- Responsável: {conflito['responsavel']}")
-                st.write(f"- Tipo: {conflito['tipo']}")
-                st.divider()
-    
-    # Colunas-chave utilizadas
-    st.markdown("#### 🔑 Colunas-chave para identificação:")
-    st.write(", ".join(analise['colunas_chave_usadas']))
-    
-    return True
+                        # Adicionar responsável aos dados enviados
+                        df["RESPONSÁVEL"] = responsavel.strip()
 
-# Exemplo de integração no código principal
-def exemplo_uso_consolidacao():
-    """Exemplo de como integrar no código principal"""
+                        # Normalizar nomes das colunas
+                        df.columns = df.columns.str.strip().str.upper()
+                        if not df_consolidado.empty:
+                            df_consolidado.columns = df_consolidado.columns.str.strip().str.upper()
+
+                        # Verificar se existe coluna DATA
+                        if "DATA" not in df.columns:
+                            st.error("❌ A planilha enviada precisa conter a coluna 'DATA'.")
+                        elif not df_consolidado.empty and "DATA" not in df_consolidado.columns:
+                            st.error("❌ O arquivo consolidado existente não contém a coluna 'DATA'.")
+                        else:
+                            # Processar datas da planilha enviada
+                            df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
+                            df = df.dropna(subset=["DATA"])
+                            
+                            if df.empty:
+                                st.error("❌ Nenhuma data válida encontrada na planilha enviada.")
+                            else:
+                                # Processar consolidado apenas se não estiver vazio
+                                if not df_consolidado.empty:
+                                    df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
+                                    df_consolidado = df_consolidado.dropna(subset=["DATA"])
+                                
+                                # Remover dados existentes do mesmo responsável para as mesmas datas
+                                datas_novas = df["DATA"].dt.normalize().unique()
+                                if not df_consolidado.empty:
+                                    df_consolidado = df_consolidado[
+                                        ~(
+                                            (df_consolidado["RESPONSÁVEL"] == responsavel.strip()) &
+                                            (df_consolidado["DATA"].dt.normalize().isin(datas_novas))
+                                        )
+                                    ]
+                                
+                                # Consolidar dados
+                                df_final = pd.concat([df_consolidado, df], ignore_index=True)
+                                
+                                # Preparar arquivo para upload
+                                buffer = BytesIO()
+                                df_final.to_excel(buffer, index=False, sheet_name="Dados")
+                                buffer.seek(0)
+                                
+                                # Salvar planilha enviada pelo responsável
+                                try:
+                                    if not df.empty and "DATA" in df.columns:
+                                        data_base = df["DATA"].min()
+                                        nome_pasta = f"Relatorios_Enviados/{data_base.strftime('%Y-%m')}"
+                                        nome_arquivo = f"{nome_pasta}/{responsavel.strip()}_{datetime.now().strftime('%d-%m-%Y_%Hh%M')}.xlsx"
+                                        
+                                        buffer_envio = BytesIO()
+                                        df.to_excel(buffer_envio, index=False)
+                                        buffer_envio.seek(0)
+                                        
+                                        upload_onedrive(nome_arquivo, buffer_envio.read(), token)
+                                except Exception as e:
+                                    st.warning(f"⚠️ Não foi possível salvar o arquivo enviado: {e}")
+
+                                # Fazer upload do consolidado
+                                sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
+                                
+                                if sucesso:
+                                    st.success("✅ Consolidado atualizado com sucesso!")
+                                    st.balloons()
+                                else:
+                                    st.error(f"❌ Erro {status}")
+                                    st.code(resposta)
+
+elif aba == "📁 Gerenciar arquivos":
+    st.markdown("## 📂 Painel de Arquivos")
+    st.divider()
     
-    # Substituir a função processar_consolidacao original por:
-    df_final, analise, erro = processar_consolidacao_inteligente(
-        df_novo, df_consolidado, responsavel
-    )
-    
-    if erro:
-        st.error(erro)
-        return
-    
-    # Exibir relatório antes de confirmar
-    if exibir_relatorio_consolidacao(analise):
-        # Mostrar preview do resultado final
-        st.markdown("### 👀 Preview do Resultado Final")
-        st.dataframe(df_final.tail(10), use_container_width=True)
-        
-        # Confirmar operação
-        if st.button("✅ Confirmar Consolidação"):
-            # Prosseguir com o upload...
-            pass
+    if token:
+        arquivos = listar_arquivos(token)
+        if arquivos:
+            for arq in arquivos:
+                with st.expander(f"📄 {arq['name']}"):
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.markdown(f"[🔗 Acessar arquivo]({arq['@microsoft.graph.downloadUrl']})")
+                        st.write(f"**Tamanho:** {round(arq['size']/1024, 2)} KB")
+                        if 'lastModifiedDateTime' in arq:
+                            st.write(f"**Modificado em:** {arq['lastModifiedDateTime'][:10]}")
+        else:
+            st.info("📁 Nenhum arquivo encontrado na pasta.")
+    else:
+        st.error("❌ Erro ao autenticar com Microsoft Graph API.")
