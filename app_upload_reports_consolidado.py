@@ -97,7 +97,7 @@ def validar_dados_enviados(df, responsavel):
         if datas_validas == 0:
     erros.append("❌ Nenhuma data válida encontrada na coluna 'DATA'")
 elif datas_validas < len(df):
-    st.warning(f"⚠️ {len(df) - datas_validas} linhas com datas inválidas serão ignoradas") - datas_validas} linhas com datas inválidas serão ignoradas") - datas_validas} linhas com datas inválidas serão ignoradas")
+        st.warning(f"⚠️ {len(df) - datas_validas} linhas com datas inválidas serão ignoradas")
     
     return erros
 
