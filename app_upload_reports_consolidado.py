@@ -102,14 +102,14 @@ def validar_dados_enviados(df, responsavel):
     return erros
 
 def processar_consolidacao(df_novo, responsavel, token):
-    """Processa a consolidação dos dados - Remove dados do responsável apenas para as datas enviadas"""
+    """Processa a consolidação dos dados - Atualiza ou insere linha por linha"""
     consolidado_nome = "Reports_Geral_Consolidado.xlsx"
-    
+
     # 1. Baixar arquivo consolidado existente
     url = f"https://graph.microsoft.com/v1.0/sites/{st.secrets['SITE_ID']}/drives/{st.secrets['DRIVE_ID']}/root:/{PASTA}/{consolidado_nome}:/content"
     headers = {"Authorization": f"Bearer {token}"}
     r = requests.get(url, headers=headers)
-    
+
     if r.status_code == 200:
         try:
             df_consolidado = pd.read_excel(BytesIO(r.content))
@@ -126,75 +126,66 @@ def processar_consolidacao(df_novo, responsavel, token):
     df_novo = df_novo.copy()
     df_novo["RESPONSÁVEL"] = responsavel.strip()
     df_novo.columns = df_novo.columns.str.strip().str.upper()
-    
-    # 3. Converter e validar datas
     df_novo["DATA"] = pd.to_datetime(df_novo["DATA"], errors="coerce")
     df_novo = df_novo.dropna(subset=["DATA"])
-    
+
     if df_novo.empty:
         st.error("❌ Nenhum registro válido para consolidar")
         return False
-    
-    # 4. Identificar datas da planilha enviada
-    datas_enviadas = df_novo["DATA"].dt.normalize().unique()
-    st.info(f"📅 Datas na planilha enviada: {len(datas_enviadas)} dias únicos")
-    
-    # 5. Processar consolidado existente se houver
+
+    # 3. Consolidar linha por linha (comparação completa)
     if not df_consolidado.empty:
-        # Converter datas do consolidado
-        if "DATA" in df_consolidado.columns:
-            df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
-            df_consolidado = df_consolidado.dropna(subset=["DATA"])
-        
-        # EXCLUIR registros do mesmo responsável APENAS para as datas enviadas
-        registros_antes = len(df_consolidado)
-        
-        if "RESPONSÁVEL" in df_consolidado.columns:
-            # Filtro: Remove apenas registros do mesmo responsável E das mesmas datas
-            df_consolidado = df_consolidado[
-                ~(
-                    (df_consolidado["RESPONSÁVEL"].str.strip() == responsavel.strip()) &
-                    (df_consolidado["DATA"].dt.normalize().isin(datas_enviadas))
-                )
-            ]
-            
-            registros_removidos = registros_antes - len(df_consolidado)
-            if registros_removidos > 0:
-                st.info(f"🗑️ Excluídos {registros_removidos} registros do responsável '{responsavel}' para as datas enviadas")
+        df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
+        df_consolidado = df_consolidado.dropna(subset=["DATA"])
+
+        registros_atualizados = 0
+        registros_inseridos = 0
+        colunas = df_novo.columns.tolist()
+
+        for _, row_nova in df_novo.iterrows():
+            cond = (
+                (df_consolidado["DATA"].dt.normalize() == row_nova["DATA"].normalize()) &
+                (df_consolidado["RESPONSÁVEL"].str.strip() == row_nova["RESPONSÁVEL"].strip())
+            )
+            possiveis = df_consolidado[cond]
+
+            igual_exata = (possiveis[colunas] == row_nova[colunas].values).all(axis=1)
+            if igual_exata.any():
+                continue  # já existe linha idêntica → ignorar
+
+            if not possiveis.empty:
+                index = possiveis.index[0]
+                df_consolidado.loc[index, colunas] = row_nova.values
+                registros_atualizados += 1
             else:
-                st.info(f"ℹ️ Nenhum registro anterior encontrado do responsável '{responsavel}' para essas datas")
-        
-        # INSERIR os novos dados
-        df_final = pd.concat([df_consolidado, df_novo], ignore_index=True)
+                df_consolidado = pd.concat([df_consolidado, pd.DataFrame([row_nova])], ignore_index=True)
+                registros_inseridos += 1
+
+        df_final = df_consolidado.copy()
+        st.info(f"🔁 {registros_atualizados} registros atualizados")
+        st.info(f"➕ {registros_inseridos} registros inseridos")
     else:
-        # Se não há consolidado, usar apenas os novos dados
         df_final = df_novo.copy()
         st.info("📂 Primeiro envio - criando arquivo consolidado")
-    
-    # 6. Ordenar por data e responsável
+
+    # 4. Ordenar e salvar
     df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"]).reset_index(drop=True)
-    
-    # 7. Preparar arquivo para upload
     buffer = BytesIO()
     df_final.to_excel(buffer, index=False, sheet_name="Dados")
     buffer.seek(0)
-    
-    # 8. Salvar cópia do arquivo enviado
+
+    # 5. Backup e envio
     salvar_arquivo_enviado(df_novo, responsavel, token)
-    
-    # 9. Fazer upload do consolidado
     sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
-    
+
     if sucesso:
         st.success("✅ Consolidação realizada com sucesso!")
         st.info(f"📊 Total de registros no consolidado: {len(df_final)}")
-        st.info(f"📊 Registros inseridos: {len(df_novo)}")
-        
-        # Mostrar resumo das datas processadas
+        st.info(f"📊 Registros inseridos: {registros_inseridos}")
+        st.info(f"📊 Registros atualizados: {registros_atualizados}")
         data_min = df_novo["DATA"].min().strftime("%d/%m/%Y")
         data_max = df_novo["DATA"].max().strftime("%d/%m/%Y")
         st.info(f"📅 Período processado: {data_min} até {data_max}")
-        
         return True
     else:
         st.error(f"❌ Erro no upload: {status}")
