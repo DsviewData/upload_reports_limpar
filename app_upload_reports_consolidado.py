@@ -95,9 +95,9 @@ def validar_dados_enviados(df, responsavel):
         datas_validas = df_temp["DATA"].notna().sum()
         
         if datas_validas == 0:
-            erros.append("⚠️ Nenhuma data válida encontrada na coluna 'DATA'")
-        elif datas_validas < len(df):
-            erros.append(f"⚠️ {len(df) - datas_validas} linhas com datas inválidas serão ignoradas")
+        erros.append("❌ Nenhuma data válida encontrada na coluna 'DATA'")
+    elif datas_validas < len(df):
+        st.warning(f"⚠️ {len(df) - datas_validas} linhas com datas inválidas serão ignoradas") - datas_validas} linhas com datas inválidas serão ignoradas")
     
     return erros
 
