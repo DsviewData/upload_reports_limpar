@@ -485,6 +485,72 @@ def main():
                 datas_validas = pd.to_datetime(df["DATA"], errors="coerce").notna().sum()
                 st.metric("Datas válidas", datas_validas)
 
+        # Resumo de totais por produto
+        st.subheader("💰 Resumo de Totais por Produto")
+        
+        # Lista das colunas de produtos para buscar
+        colunas_produtos = ['DUTO', 'FREIO', 'VERNIZ', 'SANITIZANTE']
+        
+        # Encontrar colunas que existem no DataFrame
+        colunas_encontradas = [col for col in colunas_produtos if col in df.columns]
+        
+        if colunas_encontradas:
+            # Calcular totais
+            totais = {}
+            total_geral = 0
+            
+            for coluna in colunas_encontradas:
+                # Converter para numérico, tratando erros como 0
+                valores_numericos = pd.to_numeric(df[coluna], errors='coerce').fillna(0)
+                total = valores_numericos.sum()
+                totais[coluna] = total
+                total_geral += total
+            
+            # Exibir métricas em colunas
+            num_colunas = len(colunas_encontradas) + 1  # +1 para o total geral
+            cols = st.columns(num_colunas)
+            
+            # Mostrar totais por produto
+            for i, (coluna, total) in enumerate(totais.items()):
+                with cols[i]:
+                    # Formatar número com separadores de milhares
+                    total_formatado = f"{total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+                    st.metric(f"🔧 {coluna.title()}", f"R$ {total_formatado}")
+            
+            # Mostrar total geral
+            with cols[-1]:
+                total_geral_formatado = f"{total_geral:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+                st.metric("💰 TOTAL GERAL", f"R$ {total_geral_formatado}")
+            
+            # Tabela resumo adicional
+            with st.expander("📋 Detalhes dos Totais"):
+                resumo_data = []
+                for coluna, total in totais.items():
+                    resumo_data.append({
+                        'Produto': coluna.title(),
+                        'Total (R$)': f"{total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
+                        'Registros': (pd.to_numeric(df[coluna], errors='coerce') > 0).sum()
+                    })
+                
+                resumo_data.append({
+                    'Produto': 'TOTAL GERAL',
+                    'Total (R$)': f"{total_geral:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
+                    'Registros': len([col for col in colunas_encontradas if (pd.to_numeric(df[col], errors='coerce') > 0).any()])
+                })
+                
+                df_resumo = pd.DataFrame(resumo_data)
+                st.dataframe(df_resumo, use_container_width=True, hide_index=True)
+        else:
+            st.warning("⚠️ Nenhuma coluna de produtos encontrada (DUTO, FREIO, VERNIZ, SANITIZANTE)")
+            
+            # Mostrar colunas disponíveis para ajudar o usuário
+            with st.expander("🔍 Ver colunas disponíveis"):
+                colunas_disponiveis = [col for col in df.columns if col != 'DATA']
+                st.write("**Colunas encontradas na planilha:**")
+                for col in colunas_disponiveis:
+                    st.write(f"• {col}")
+                st.info("💡 **Dica:** Renomeie as colunas na sua planilha para: DUTO, FREIO, VERNIZ, SANITIZANTE")
+
         # Verificar colunas com valores nulos
         colunas_nulas = df.columns[df.isnull().any()].tolist()
         if colunas_nulas:
