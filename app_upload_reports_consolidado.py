@@ -274,6 +274,8 @@ def processar_consolidacao(df_novo, responsavel, token):
                 possiveis = df_consolidado[cond]
 
                 # Verificar se já existe linha idêntica
+                linha_identica_encontrada = False
+                
                 if not possiveis.empty:
                     # Comparar valores das colunas principais (exceto metadados)
                     colunas_comparacao = [col for col in colunas if col not in ["RESPONSÁVEL"]]
@@ -283,9 +285,11 @@ def processar_consolidacao(df_novo, responsavel, token):
                                str(row_nova[col]).strip() == str(row_existente[col]).strip() 
                                for col in colunas_comparacao if col in row_existente.index):
                             registros_ignorados += 1
+                            linha_identica_encontrada = True
                             break
-                    else:
-                        # Atualizar primeiro registro encontrado
+                    
+                    # Se não encontrou linha idêntica, atualizar primeiro registro
+                    if not linha_identica_encontrada:
                         index = possiveis.index[0]
                         df_consolidado.loc[index, colunas] = row_nova.values
                         registros_atualizados += 1
@@ -488,8 +492,8 @@ def main():
         # Resumo de totais por produto
         st.subheader("💰 Resumo de Totais por Produto")
         
-        # Lista das colunas de produtos para buscar
-        colunas_produtos = ['DUTO', 'FREIO', 'VERNIZ', 'SANITIZANTE']
+        # Lista das colunas de produtos corrigidas
+        colunas_produtos = ['TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 'TMO - VERNIZ', 'CX EVAP']
         
         # Encontrar colunas que existem no DataFrame
         colunas_encontradas = [col for col in colunas_produtos if col in df.columns]
@@ -502,46 +506,68 @@ def main():
             for coluna in colunas_encontradas:
                 # Converter para numérico, tratando erros como 0
                 valores_numericos = pd.to_numeric(df[coluna], errors='coerce').fillna(0)
-                total = valores_numericos.sum()
+                total = int(valores_numericos.sum())  # Converter para inteiro
                 totais[coluna] = total
                 total_geral += total
             
+            # Calcular TMO - Total se houver colunas TMO
+            colunas_tmo = [col for col in colunas_encontradas if col.startswith('TMO -')]
+            if colunas_tmo:
+                tmo_total = sum(totais[col] for col in colunas_tmo)
+                totais['TMO - TOTAL'] = tmo_total
+            
             # Exibir métricas em colunas
-            num_colunas = len(colunas_encontradas) + 1  # +1 para o total geral
+            produtos_para_exibir = [col for col in colunas_produtos if col in totais]
+            if 'TMO - TOTAL' in totais:
+                produtos_para_exibir.append('TMO - TOTAL')
+            
+            num_colunas = len(produtos_para_exibir)
             cols = st.columns(num_colunas)
             
             # Mostrar totais por produto
-            for i, (coluna, total) in enumerate(totais.items()):
+            for i, coluna in enumerate(produtos_para_exibir):
                 with cols[i]:
-                    # Formatar número com separadores de milhares
-                    total_formatado = f"{total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-                    st.metric(f"🔧 {coluna.title()}", f"R$ {total_formatado}")
-            
-            # Mostrar total geral
-            with cols[-1]:
-                total_geral_formatado = f"{total_geral:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-                st.metric("💰 TOTAL GERAL", f"R$ {total_geral_formatado}")
+                    total = totais[coluna]
+                    # Formatar número com separadores de milhares (formato inteiro)
+                    total_formatado = f"{total:,}".replace(',', '.')
+                    
+                    # Definir emoji baseado no produto
+                    if 'DUTO' in coluna:
+                        emoji = "🔧"
+                    elif 'FREIO' in coluna:
+                        emoji = "🚗"
+                    elif 'SANIT' in coluna:
+                        emoji = "🧽"
+                    elif 'VERNIZ' in coluna:
+                        emoji = "🎨"
+                    elif 'EVAP' in coluna:
+                        emoji = "📦"
+                    elif 'TOTAL' in coluna:
+                        emoji = "💰"
+                    else:
+                        emoji = "📊"
+                    
+                    # Nome simplificado para exibição
+                    nome_display = coluna.replace('TMO - ', '').title()
+                    
+                    st.metric(f"{emoji} {nome_display}", total_formatado)
             
             # Tabela resumo adicional
             with st.expander("📋 Detalhes dos Totais"):
                 resumo_data = []
-                for coluna, total in totais.items():
+                for coluna in produtos_para_exibir:
+                    total = totais[coluna]
+                    nome_produto = coluna.replace('TMO - ', '').title()
                     resumo_data.append({
-                        'Produto': coluna.title(),
-                        'Total (R$)': f"{total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
-                        'Registros': (pd.to_numeric(df[coluna], errors='coerce') > 0).sum()
+                        'Produto': nome_produto,
+                        'Total': f"{total:,}".replace(',', '.'),
+                        'Registros': (pd.to_numeric(df[coluna], errors='coerce') > 0).sum() if coluna in df.columns else 0
                     })
-                
-                resumo_data.append({
-                    'Produto': 'TOTAL GERAL',
-                    'Total (R$)': f"{total_geral:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
-                    'Registros': len([col for col in colunas_encontradas if (pd.to_numeric(df[col], errors='coerce') > 0).any()])
-                })
                 
                 df_resumo = pd.DataFrame(resumo_data)
                 st.dataframe(df_resumo, use_container_width=True, hide_index=True)
         else:
-            st.warning("⚠️ Nenhuma coluna de produtos encontrada (DUTO, FREIO, VERNIZ, SANITIZANTE)")
+            st.warning("⚠️ Nenhuma coluna de produtos encontrada")
             
             # Mostrar colunas disponíveis para ajudar o usuário
             with st.expander("🔍 Ver colunas disponíveis"):
@@ -549,7 +575,7 @@ def main():
                 st.write("**Colunas encontradas na planilha:**")
                 for col in colunas_disponiveis:
                     st.write(f"• {col}")
-                st.info("💡 **Dica:** Renomeie as colunas na sua planilha para: DUTO, FREIO, VERNIZ, SANITIZANTE")
+                st.info("💡 **Dica:** Renomeie as colunas na sua planilha para: TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP")
 
         # Verificar colunas com valores nulos
         colunas_nulas = df.columns[df.isnull().any()].tolist()
@@ -600,29 +626,4 @@ def main():
             if st.button("📧 Consolidar Dados", type="primary", disabled=bool(erros)):
                 if erros:
                     st.error("❌ Corrija os erros acima antes de prosseguir")
-                else:
-                    sucesso = processar_consolidacao(df, responsavel, token)
-                    if sucesso:
-                        st.balloons()
-                        
-        with col2:
-            if st.button("🔄 Limpar", type="secondary"):
-                st.rerun()
-
-    # Rodapé com informações
-    st.divider()
-    st.markdown(
-        """
-        <div style="text-align: center; color: #666; font-size: 0.8em;">
-            DSView BI - Sistema de Consolidação de Relatórios<br>
-            ⚠️ Certifique-se de que sua planilha contenha:<br>
-            • Uma aba chamada <strong>'Vendas CTs'</strong><br>
-            • Uma coluna <strong>'DATA'</strong><br>
-            • Informe o nome do <strong>responsável</strong>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-if __name__ == "__main__":
-    main()
+                
