@@ -626,4 +626,30 @@ def main():
             if st.button("📧 Consolidar Dados", type="primary", disabled=bool(erros)):
                 if erros:
                     st.error("❌ Corrija os erros acima antes de prosseguir")
-                
+                else:
+                    sucesso = processar_consolidacao(df, responsavel, token)
+                    if sucesso:
+                        st.balloons()
+                        
+        with col2:
+            if st.button("🔄 Limpar", type="secondary"):
+                st.rerun()
+
+    # Rodapé com informações
+    st.divider()
+    st.markdown(
+        """
+        <div style="text-align: center; color: #666; font-size: 0.8em;">
+            DSView BI - Sistema de Consolidação de Relatórios<br>
+            ⚠️ Certifique-se de que sua planilha contenha:<br>
+            • Uma aba chamada <strong>'Vendas CTs'</strong><br>
+            • Uma coluna <strong>'DATA'</strong><br>
+            • Colunas: <strong>TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP</strong><br>
+            • Informe o nome do <strong>responsável</strong>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+if __name__ == "__main__":
+    main()
