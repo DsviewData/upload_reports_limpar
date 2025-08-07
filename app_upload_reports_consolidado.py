@@ -296,7 +296,7 @@ def validar_dados_enviados(df, responsavel):
     return erros, avisos, linhas_invalidas_detalhes
 
 def processar_consolidacao(df_novo, responsavel, token):
-    """Processa a consolidação dos dados - Versão melhorada com validações adicionais"""
+    """Processa a consolidação dos dados - Comparação linha por linha por RESPONSÁVEL + DATA"""
     consolidado_nome = "Reports_Geral_Consolidado.xlsx"
 
     # 1. Baixar arquivo consolidado existente
@@ -335,14 +335,15 @@ def processar_consolidacao(df_novo, responsavel, token):
     if linhas_invalidas > 0:
         st.info(f"🧹 {linhas_invalidas} linhas com datas inválidas foram removidas")
 
-    # 3. Consolidar com lógica melhorada
-    registros_atualizados = 0
+    # 3. Consolidação linha por linha
     registros_inseridos = 0
-    registros_ignorados = 0
-    registros_duplicados_removidos = 0
+    registros_atualizados = 0
+    registros_sem_alteracao = 0
+    detalhes_operacoes = []
     
-    with st.spinner("🔄 Processando consolidação..."):
+    with st.spinner("🔄 Processando consolidação linha por linha..."):
         if not df_consolidado.empty:
+            # Converter datas do consolidado
             df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
             df_consolidado = df_consolidado.dropna(subset=["DATA"])
             
@@ -350,40 +351,92 @@ def processar_consolidacao(df_novo, responsavel, token):
             for col in df_novo.columns:
                 if col not in df_consolidado.columns:
                     df_consolidado[col] = None
-
-            # Remover registros antigos do mesmo responsável no mesmo período
-            if "RESPONSÁVEL" in df_consolidado.columns:
-                data_min_nova = df_novo["DATA"].min().normalize()
-                data_max_nova = df_novo["DATA"].max().normalize()
+                    
+            # Garantir que todas as colunas do consolidado estão no novo
+            for col in df_consolidado.columns:
+                if col not in df_novo.columns:
+                    df_novo[col] = None
+            
+            # Processar cada linha do arquivo novo
+            for idx, linha_nova in df_novo.iterrows():
+                data_nova = linha_nova["DATA"]
+                responsavel_novo = linha_nova["RESPONSÁVEL"]
                 
-                mask_mesmo_responsavel = (
-                    (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == responsavel.strip().upper()) &
-                    (df_consolidado["DATA"].dt.normalize() >= data_min_nova) &
-                    (df_consolidado["DATA"].dt.normalize() <= data_max_nova)
+                # Buscar linha correspondente no consolidado (RESPONSÁVEL + DATA)
+                mask_correspondencia = (
+                    (df_consolidado["DATA"].dt.normalize() == data_nova.normalize()) &
+                    (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == responsavel_novo.strip().upper())
                 )
                 
-                registros_removidos = mask_mesmo_responsavel.sum()
-                if registros_removidos > 0:
-                    df_consolidado = df_consolidado[~mask_mesmo_responsavel]
-                    st.info(f"🔄 Removidos {registros_removidos} registros antigos do mesmo responsável no período")
-
-            # Adicionar novos registros
-            df_final = pd.concat([df_consolidado, df_novo], ignore_index=True)
-            registros_inseridos = len(df_novo)
+                linhas_correspondentes = df_consolidado[mask_correspondencia]
+                
+                if linhas_correspondentes.empty:
+                    # Registro não existe - INSERIR
+                    nova_linha = pd.DataFrame([linha_nova])
+                    df_consolidado = pd.concat([df_consolidado, nova_linha], ignore_index=True)
+                    registros_inseridos += 1
+                    detalhes_operacoes.append({
+                        "Operação": "INSERIR",
+                        "Data": data_nova.strftime("%d/%m/%Y"),
+                        "Responsável": responsavel_novo
+                    })
+                    
+                else:
+                    # Registro existe - VERIFICAR SE HOUVE ALTERAÇÃO
+                    linha_existente = linhas_correspondentes.iloc[0]
+                    index_existente = linhas_correspondentes.index[0]
+                    
+                    # Comparar todas as colunas (exceto metadados)
+                    colunas_comparacao = [col for col in df_novo.columns 
+                                        if col not in ["ÚLTIMA_ATUALIZAÇÃO"]]
+                    
+                    houve_alteracao = False
+                    campos_alterados = []
+                    
+                    for col in colunas_comparacao:
+                        valor_novo = linha_nova[col]
+                        valor_existente = linha_existente[col]
+                        
+                        # Normalizar valores para comparação
+                        if pd.isna(valor_novo) and pd.isna(valor_existente):
+                            continue  # Ambos são NaN - sem alteração
+                        elif pd.isna(valor_novo) or pd.isna(valor_existente):
+                            houve_alteracao = True
+                            campos_alterados.append(col)
+                        else:
+                            # Converter para string e comparar (para evitar problemas de tipo)
+                            if str(valor_novo).strip() != str(valor_existente).strip():
+                                houve_alteracao = True
+                                campos_alterados.append(col)
+                    
+                    if houve_alteracao:
+                        # ATUALIZAR linha existente
+                        for col in colunas_comparacao:
+                            df_consolidado.loc[index_existente, col] = linha_nova[col]
+                        
+                        registros_atualizados += 1
+                        detalhes_operacoes.append({
+                            "Operação": "ATUALIZAR",
+                            "Data": data_nova.strftime("%d/%m/%Y"),
+                            "Responsável": responsavel_novo,
+                            "Campos alterados": ", ".join(campos_alterados[:3]) + ("..." if len(campos_alterados) > 3 else "")
+                        })
+                    else:
+                        # Sem alteração
+                        registros_sem_alteracao += 1
+                        detalhes_operacoes.append({
+                            "Operação": "SEM ALTERAÇÃO",
+                            "Data": data_nova.strftime("%d/%m/%Y"),
+                            "Responsável": responsavel_novo
+                        })
+                        
+            df_final = df_consolidado.copy()
             
         else:
+            # Arquivo consolidado não existe - inserir todos os registros
             df_final = df_novo.copy()
             registros_inseridos = len(df_novo)
             st.info("📂 Primeiro envio - criando arquivo consolidado")
-
-        # Remover duplicatas exatas (mantendo última ocorrência)
-        colunas_para_duplicata = ["DATA", "RESPONSÁVEL"]
-        colunas_existentes = [col for col in colunas_para_duplicata if col in df_final.columns]
-        
-        if colunas_existentes:
-            duplicatas_antes = len(df_final)
-            df_final = df_final.drop_duplicates(subset=colunas_existentes, keep='last')
-            registros_duplicados_removidos = duplicatas_antes - len(df_final)
 
     # 4. Ordenar e finalizar
     df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"], na_position='last').reset_index(drop=True)
@@ -410,13 +463,19 @@ def processar_consolidacao(df_novo, responsavel, token):
         # Métricas de resultado
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("📊 Total final", len(df_final))
+            st.metric("📊 Total de registros", len(df_final))
         with col2:
             st.metric("➕ Inseridos", registros_inseridos)
         with col3:
-            st.metric("🔁 Atualizados", registros_atualizados)
+            st.metric("🔄 Atualizados", registros_atualizados)
         with col4:
-            st.metric("🗑️ Duplicatas removidas", registros_duplicados_removidos)
+            st.metric("➡️ Sem alteração", registros_sem_alteracao)
+        
+        # Mostrar detalhes das operações
+        if detalhes_operacoes:
+            with st.expander("📋 Detalhes das Operações Realizadas"):
+                df_detalhes = pd.DataFrame(detalhes_operacoes)
+                st.dataframe(df_detalhes, use_container_width=True, hide_index=True)
         
         # Informações do período
         if not df_novo.empty:
