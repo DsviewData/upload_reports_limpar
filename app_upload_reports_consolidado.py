@@ -838,7 +838,7 @@ def main():
                 for col in colunas_disponiveis:
                     st.write(f"• {col}")
                 st.info("💡 **Dica:** Use exatamente estes nomes de colunas:")
-                st.code("GRUPO, CONCESSIONÁRIA, LOJA, MARCA, UF, RESPONSÁVEL, CONSULTORES, DATA, TMO - DUTO, TMO - FREIO, TMO - SANIT, TMO - VERNIZ, CX EVAP, TMO - TOTAL")ais[coluna] = total
+                st.code("GRUPO, CONCESSIONÁRIA, LOJA, MARCA, UF, RESPONSÁVEL, CONSULTORES, DATA, TMO - DUTO, TMO - FREIO, TMO - SANIT, TMO - VERNIZ, CX EVAP, TMO - TOTAL")
                 total_geral += total
             
             # Calcular TMO - Total se houver colunas TMO
