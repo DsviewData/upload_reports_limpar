@@ -6,65 +6,23 @@ from io import BytesIO
 from msal import ConfidentialClientApplication
 import unicodedata
 import logging
-import re
-
-# Configurar página do Streamlit
-st.set_page_config(
-    page_title="Upload Reports Consolidado",
-    page_icon="📊",
-    layout="wide"
-)
 
 # Configurar logging para debug
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # === CREDENCIAIS via st.secrets ===
-def verificar_credenciais():
-    """Verifica se todas as credenciais necessárias estão disponíveis"""
-    credenciais_necessarias = [
-        "CLIENT_ID", "CLIENT_SECRET", "TENANT_ID", 
-        "EMAIL_ONEDRIVE", "SITE_ID", "DRIVE_ID"
-    ]
-    
-    credenciais_faltantes = []
-    credenciais = {}
-    
-    for cred in credenciais_necessarias:
-        try:
-            credenciais[cred] = st.secrets[cred]
-        except KeyError:
-            credenciais_faltantes.append(cred)
-    
-    if credenciais_faltantes:
-        st.error("❌ **Erro de Configuração**")
-        st.error(f"Credenciais não encontradas: {', '.join(credenciais_faltantes)}")
-        st.info("📋 **Configuração necessária em `.streamlit/secrets.toml`:**")
-        st.code(f"""
-[secrets]
-CLIENT_ID = "seu_client_id"
-CLIENT_SECRET = "seu_client_secret"
-TENANT_ID = "seu_tenant_id"
-EMAIL_ONEDRIVE = "seu_email"
-SITE_ID = "seu_site_id"
-DRIVE_ID = "seu_drive_id"
-        """)
-        return None
-    
-    return credenciais
-
-# Verificar credenciais no início
-CREDENCIAIS = verificar_credenciais()
-if CREDENCIAIS is None:
+try:
+    CLIENT_ID = st.secrets["CLIENT_ID"]
+    CLIENT_SECRET = st.secrets["CLIENT_SECRET"]
+    TENANT_ID = st.secrets["TENANT_ID"]
+    EMAIL_ONEDRIVE = st.secrets["EMAIL_ONEDRIVE"]
+    SITE_ID = st.secrets["SITE_ID"]
+    DRIVE_ID = st.secrets["DRIVE_ID"]
+except KeyError as e:
+    st.error(f"❌ Credencial não encontrada: {e}")
     st.stop()
 
-# Definir constantes
-CLIENT_ID = CREDENCIAIS["CLIENT_ID"]
-CLIENT_SECRET = CREDENCIAIS["CLIENT_SECRET"]
-TENANT_ID = CREDENCIAIS["TENANT_ID"]
-EMAIL_ONEDRIVE = CREDENCIAIS["EMAIL_ONEDRIVE"]
-SITE_ID = CREDENCIAIS["SITE_ID"]
-DRIVE_ID = CREDENCIAIS["DRIVE_ID"]
 PASTA = "Documentos Compartilhados/LimparAuto/FontedeDados"
 
 # === AUTENTICAÇÃO ===
@@ -92,79 +50,6 @@ def obter_token():
         return None
 
 # === FUNÇÕES AUXILIARES ===
-def extrair_responsavel_da_planilha(df):
-    """Extrai o nome do responsável da planilha usando diferentes estratégias"""
-    responsavel_encontrado = None
-    metodo_deteccao = None
-    
-    try:
-        # Estratégia 1: Procurar coluna 'RESPONSÁVEL' ou 'RESPONSAVEL'
-        colunas_responsavel = [col for col in df.columns if 
-                             any(term in col.upper() for term in ['RESPONSÁVEL', 'RESPONSAVEL', 'RESP'])]
-        
-        if colunas_responsavel:
-            coluna = colunas_responsavel[0]
-            valores_unicos = df[coluna].dropna().unique()
-            if len(valores_unicos) > 0:
-                # Pegar o valor mais comum
-                responsavel_encontrado = df[coluna].value_counts().index[0]
-                metodo_deteccao = f"Coluna '{coluna}'"
-        
-        # Estratégia 2: Procurar em células específicas (primeira linha, primeiras colunas)
-        if not responsavel_encontrado:
-            # Verificar primeira linha em busca de padrões como "Responsável:", "Nome:", etc.
-            primeira_linha = df.iloc[0] if not df.empty else pd.Series()
-            for col in df.columns[:5]:  # Verificar apenas primeiras 5 colunas
-                valor = str(primeira_linha.get(col, '')).strip()
-                if valor and len(valor) > 2 and any(char.isalpha() for char in valor):
-                    # Verificar se parece com um nome (tem espaço e letras)
-                    if ' ' in valor and len(valor.split()) >= 2:
-                        responsavel_encontrado = valor
-                        metodo_deteccao = f"Primeira linha, coluna '{col}'"
-                        break
-        
-        # Estratégia 3: Procurar em células que contenham padrões de nome
-        if not responsavel_encontrado:
-            for idx, row in df.head(10).iterrows():  # Verificar apenas primeiras 10 linhas
-                for col in df.columns:
-                    valor = str(row[col]).strip()
-                    if (valor and len(valor) > 2 and 
-                        ' ' in valor and 
-                        len(valor.split()) >= 2 and
-                        not valor.replace(' ', '').isdigit() and  # Não é apenas números
-                        not '/' in valor and  # Não é data
-                        not valor.upper() in ['NAN', 'NULL', 'NONE']):
-                        
-                        # Verificar se parece com nome (mais de 50% letras)
-                        letras = sum(c.isalpha() for c in valor)
-                        if letras / len(valor) > 0.5:
-                            responsavel_encontrado = valor
-                            metodo_deteccao = f"Linha {idx+1}, coluna '{col}'"
-                            break
-                if responsavel_encontrado:
-                    break
-        
-        # Limpar e validar o nome encontrado
-        if responsavel_encontrado:
-            # Remover caracteres especiais no início/fim
-            responsavel_encontrado = re.sub(r'^[^\w\s]+|[^\w\s]+$', '', responsavel_encontrado).strip()
-            
-            # Capitalizar adequadamente
-            responsavel_encontrado = ' '.join(word.capitalize() for word in responsavel_encontrado.split())
-            
-            # Verificar se o nome é válido (pelo menos 2 palavras, cada uma com pelo menos 2 caracteres)
-            palavras = responsavel_encontrado.split()
-            if len(palavras) < 2 or any(len(palavra) < 2 for palavra in palavras):
-                responsavel_encontrado = None
-                metodo_deteccao = None
-    
-    except Exception as e:
-        logger.error(f"Erro ao extrair responsável: {e}")
-        responsavel_encontrado = None
-        metodo_deteccao = None
-    
-    return responsavel_encontrado, metodo_deteccao
-
 def criar_pasta_se_nao_existir(caminho_pasta, token):
     """Cria pasta no OneDrive se não existir"""
     try:
@@ -272,20 +157,11 @@ def validar_dados_enviados(df, responsavel):
     avisos = []
     linhas_invalidas_detalhes = []
     
-    # Colunas esperadas do sistema
-    COLUNAS_ESPERADAS = [
-        'GRUPO', 'CONCESSIONÁRIA', 'LOJA', 'MARCA', 'UF', 'RESPONSÁVEL', 
-        'CONSULTORES', 'DATA', 'TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 
-        'TMO - VERNIZ', 'CX EVAP', 'TMO - TOTAL'
-    ]
-    
     # Validar responsável
     if not responsavel or not responsavel.strip():
         erros.append("⚠️ O nome do responsável é obrigatório")
     elif len(responsavel.strip()) < 2:
         erros.append("⚠️ O nome do responsável deve ter pelo menos 2 caracteres")
-    elif len(responsavel.strip().split()) < 2:
-        avisos.append("⚠️ Recomenda-se informar nome e sobrenome do responsável")
     
     # Validar se DataFrame não está vazio
     if df.empty:
@@ -331,37 +207,11 @@ def validar_dados_enviados(df, responsavel):
             if duplicatas > 0:
                 avisos.append(f"⚠️ {duplicatas} linhas com datas duplicadas na planilha")
     
-    # Validar colunas essenciais
-    colunas_faltantes = [col for col in COLUNAS_ESPERADAS if col not in df.columns]
-    colunas_importantes = ['GRUPO', 'CONCESSIONÁRIA', 'LOJA', 'MARCA', 'UF']
-    colunas_importantes_faltantes = [col for col in colunas_importantes if col not in df.columns]
-    
-    if colunas_importantes_faltantes:
-        avisos.append(f"⚠️ Colunas importantes não encontradas: {', '.join(colunas_importantes_faltantes)}")
-    
-    if colunas_faltantes:
-        avisos.append(f"📋 Colunas que serão criadas automaticamente: {', '.join(colunas_faltantes)}")
-    
-    # Validar colunas numéricas
-    colunas_numericas = ['TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 'TMO - VERNIZ', 'CX EVAP', 'TMO - TOTAL']
-    for col in colunas_numericas:
-        if col in df.columns:
-            valores_nao_numericos = pd.to_numeric(df[col], errors='coerce').isna().sum()
-            if valores_nao_numericos > 0:
-                avisos.append(f"⚠️ {valores_nao_numericos} valores não numéricos na coluna '{col}' serão convertidos para 0")
-    
     return erros, avisos, linhas_invalidas_detalhes
 
 def processar_consolidacao(df_novo, responsavel, token):
-    """Processa a consolidação dos dados - Comparação linha por linha por RESPONSÁVEL + DATA"""
+    """Processa a consolidação dos dados - Atualiza ou insere linha por linha"""
     consolidado_nome = "Reports_Geral_Consolidado.xlsx"
-
-    # Definir colunas esperadas para comparação
-    COLUNAS_ESPERADAS = [
-        'GRUPO', 'CONCESSIONÁRIA', 'LOJA', 'MARCA', 'UF', 'RESPONSÁVEL', 
-        'CONSULTORES', 'DATA', 'TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 
-        'TMO - VERNIZ', 'CX EVAP', 'TMO - TOTAL'
-    ]
 
     # 1. Baixar arquivo consolidado existente
     url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{PASTA}/{consolidado_nome}:/content"
@@ -399,169 +249,64 @@ def processar_consolidacao(df_novo, responsavel, token):
     if linhas_invalidas > 0:
         st.info(f"🧹 {linhas_invalidas} linhas com datas inválidas foram removidas")
 
-    # Verificar se colunas esperadas existem na planilha enviada
-    colunas_faltantes = [col for col in COLUNAS_ESPERADAS if col not in df_novo.columns]
-    if colunas_faltantes:
-        st.warning(f"⚠️ Colunas não encontradas na planilha enviada: {', '.join(colunas_faltantes)}")
-        # Adicionar colunas faltantes com valores vazios
-        for col in colunas_faltantes:
-            df_novo[col] = None
-
-    # Calcular TMO - TOTAL se não existir
-    if 'TMO - TOTAL' not in df_novo.columns or df_novo['TMO - TOTAL'].isna().all():
-        colunas_tmo = ['TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 'TMO - VERNIZ']
-        colunas_tmo_existentes = [col for col in colunas_tmo if col in df_novo.columns]
-        
-        if colunas_tmo_existentes:
-            df_novo['TMO - TOTAL'] = 0
-            for col in colunas_tmo_existentes:
-                df_novo[col] = pd.to_numeric(df_novo[col], errors='coerce').fillna(0)
-                df_novo['TMO - TOTAL'] += df_novo[col]
-            st.info(f"✅ Coluna 'TMO - TOTAL' calculada automaticamente")
-
-    # 3. Consolidação linha por linha
-    registros_inseridos = 0
+    # 3. Consolidar linha por linha (comparação completa)
     registros_atualizados = 0
-    registros_sem_alteracao = 0
-    detalhes_operacoes = []
+    registros_inseridos = 0
+    registros_ignorados = 0
     
-    with st.spinner("🔄 Processando consolidação linha por linha..."):
+    with st.spinner("🔄 Processando consolidação..."):
         if not df_consolidado.empty:
-            # Converter datas do consolidado
             df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
             df_consolidado = df_consolidado.dropna(subset=["DATA"])
-            
-            # Garantir que todas as colunas esperadas existem no consolidado
-            for col in COLUNAS_ESPERADAS:
+            colunas = df_novo.columns.tolist()
+
+            # Garantir que as colunas existem no consolidado
+            for col in colunas:
                 if col not in df_consolidado.columns:
                     df_consolidado[col] = None
-            
-            # Processar cada linha do arquivo novo
-            for idx, linha_nova in df_novo.iterrows():
-                data_nova = linha_nova["DATA"]
-                responsavel_novo = linha_nova["RESPONSÁVEL"]
-                
-                # Buscar linha correspondente no consolidado (RESPONSÁVEL + DATA)
-                mask_correspondencia = (
-                    (df_consolidado["DATA"].dt.normalize() == data_nova.normalize()) &
-                    (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == responsavel_novo.strip().upper())
+
+            for idx, row_nova in df_novo.iterrows():
+                # Buscar registros com mesma data e responsável
+                cond = (
+                    (df_consolidado["DATA"].dt.normalize() == row_nova["DATA"].normalize()) &
+                    (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == row_nova["RESPONSÁVEL"].strip().upper())
                 )
+                possiveis = df_consolidado[cond]
+
+                # Verificar se já existe linha idêntica
+                linha_identica_encontrada = False
                 
-                linhas_correspondentes = df_consolidado[mask_correspondencia]
-                
-                if linhas_correspondentes.empty:
-                    # Registro não existe - INSERIR
-                    # Reorganizar linha com as colunas na ordem esperada
-                    linha_organizada = {}
-                    for col in COLUNAS_ESPERADAS:
-                        linha_organizada[col] = linha_nova.get(col, None)
+                if not possiveis.empty:
+                    # Comparar valores das colunas principais (exceto metadados)
+                    colunas_comparacao = [col for col in colunas if col not in ["RESPONSÁVEL"]]
                     
-                    nova_linha = pd.DataFrame([linha_organizada])
-                    df_consolidado = pd.concat([df_consolidado, nova_linha], ignore_index=True)
-                    registros_inseridos += 1
+                    for _, row_existente in possiveis.iterrows():
+                        if all(pd.isna(row_nova[col]) and pd.isna(row_existente[col]) or 
+                               str(row_nova[col]).strip() == str(row_existente[col]).strip() 
+                               for col in colunas_comparacao if col in row_existente.index):
+                            registros_ignorados += 1
+                            linha_identica_encontrada = True
+                            break
                     
-                    detalhes_operacoes.append({
-                        "Operação": "INSERIR",
-                        "Data": data_nova.strftime("%d/%m/%Y"),
-                        "Responsável": responsavel_novo,
-                        "Observação": "Novo registro"
-                    })
-                    
-                else:
-                    # Registro existe - VERIFICAR SE HOUVE ALTERAÇÃO
-                    linha_existente = linhas_correspondentes.iloc[0]
-                    index_existente = linhas_correspondentes.index[0]
-                    
-                    # Comparar apenas as colunas esperadas (exceto DATA e RESPONSÁVEL que já foram usadas para busca)
-                    colunas_comparacao = [col for col in COLUNAS_ESPERADAS 
-                                        if col not in ["DATA", "RESPONSÁVEL"]]
-                    
-                    houve_alteracao = False
-                    campos_alterados = []
-                    
-                    for col in colunas_comparacao:
-                        valor_novo = linha_nova.get(col, None)
-                        valor_existente = linha_existente.get(col, None)
-                        
-                        # Normalizar valores para comparação
-                        if pd.isna(valor_novo) and pd.isna(valor_existente):
-                            continue  # Ambos são NaN - sem alteração
-                        elif pd.isna(valor_novo) or pd.isna(valor_existente):
-                            houve_alteracao = True
-                            campos_alterados.append(col)
-                        else:
-                            # Para campos numéricos, converter para float para comparação
-                            if col in ['TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 'TMO - VERNIZ', 'CX EVAP', 'TMO - TOTAL']:
-                                try:
-                                    val_novo_num = float(pd.to_numeric(valor_novo, errors='coerce'))
-                                    val_exist_num = float(pd.to_numeric(valor_existente, errors='coerce'))
-                                    
-                                    # Comparar com tolerância para valores float
-                                    if abs(val_novo_num - val_exist_num) > 0.001:
-                                        houve_alteracao = True
-                                        campos_alterados.append(col)
-                                except:
-                                    # Se não conseguir converter, comparar como string
-                                    if str(valor_novo).strip() != str(valor_existente).strip():
-                                        houve_alteracao = True
-                                        campos_alterados.append(col)
-                            else:
-                                # Para campos de texto, comparar como string
-                                if str(valor_novo).strip().upper() != str(valor_existente).strip().upper():
-                                    houve_alteracao = True
-                                    campos_alterados.append(col)
-                    
-                    if houve_alteracao:
-                        # ATUALIZAR linha existente
-                        for col in COLUNAS_ESPERADAS:
-                            if col in linha_nova.index:
-                                df_consolidado.loc[index_existente, col] = linha_nova[col]
-                        
+                    # Se não encontrou linha idêntica, atualizar primeiro registro
+                    if not linha_identica_encontrada:
+                        index = possiveis.index[0]
+                        df_consolidado.loc[index, colunas] = row_nova.values
                         registros_atualizados += 1
-                        detalhes_operacoes.append({
-                            "Operação": "ATUALIZAR",
-                            "Data": data_nova.strftime("%d/%m/%Y"),
-                            "Responsável": responsavel_novo,
-                            "Observação": f"Campos alterados: {', '.join(campos_alterados[:3])}" + 
-                                        ("..." if len(campos_alterados) > 3 else "")
-                        })
-                    else:
-                        # Sem alteração
-                        registros_sem_alteracao += 1
-                        detalhes_operacoes.append({
-                            "Operação": "SEM ALTERAÇÃO",
-                            "Data": data_nova.strftime("%d/%m/%Y"),
-                            "Responsável": responsavel_novo,
-                            "Observação": "Dados idênticos"
-                        })
-                        
+                else:
+                    # Inserir novo registro
+                    new_row = pd.DataFrame([row_nova])
+                    df_consolidado = pd.concat([df_consolidado, new_row], ignore_index=True)
+                    registros_inseridos += 1
+
             df_final = df_consolidado.copy()
-            
         else:
-            # Arquivo consolidado não existe - inserir todos os registros
-            # Reorganizar com colunas na ordem esperada
-            df_organizado = pd.DataFrame()
-            for col in COLUNAS_ESPERADAS:
-                df_organizado[col] = df_novo.get(col, None)
-            
-            df_final = df_organizado.copy()
+            df_final = df_novo.copy()
             registros_inseridos = len(df_novo)
             st.info("📂 Primeiro envio - criando arquivo consolidado")
 
-    # 4. Reorganizar colunas na ordem esperada
-    colunas_finais = COLUNAS_ESPERADAS.copy()
-    # Adicionar colunas extras que possam existir
-    for col in df_final.columns:
-        if col not in colunas_finais:
-            colunas_finais.append(col)
-    
-    df_final = df_final.reindex(columns=colunas_finais)
-    
-    # 5. Ordenar e finalizar
+    # 4. Ordenar e salvar
     df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"], na_position='last').reset_index(drop=True)
-    
-    # Adicionar metadados de controle
-    df_final["ÚLTIMA_ATUALIZAÇÃO"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     # Salvar em buffer
     buffer = BytesIO()
@@ -569,10 +314,10 @@ def processar_consolidacao(df_novo, responsavel, token):
         df_final.to_excel(writer, index=False, sheet_name="Vendas CTs")
     buffer.seek(0)
 
-    # 6. Salvar cópia do arquivo enviado
+    # 5. Salvar cópia do arquivo enviado
     salvar_arquivo_enviado(df_novo, responsavel, token)
     
-    # 7. Upload do arquivo consolidado
+    # 6. Upload do arquivo consolidado
     with st.spinner("📤 Enviando arquivo consolidado..."):
         sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
 
@@ -586,15 +331,9 @@ def processar_consolidacao(df_novo, responsavel, token):
         with col2:
             st.metric("➕ Inseridos", registros_inseridos)
         with col3:
-            st.metric("🔄 Atualizados", registros_atualizados)
+            st.metric("🔁 Atualizados", registros_atualizados)
         with col4:
-            st.metric("➡️ Sem alteração", registros_sem_alteracao)
-        
-        # Mostrar detalhes das operações
-        if detalhes_operacoes:
-            with st.expander("📋 Detalhes das Operações Realizadas"):
-                df_detalhes = pd.DataFrame(detalhes_operacoes)
-                st.dataframe(df_detalhes, use_container_width=True, hide_index=True)
+            st.metric("⏭️ Ignorados", registros_ignorados)
         
         # Informações do período
         if not df_novo.empty:
@@ -637,163 +376,280 @@ def salvar_arquivo_enviado(df, responsavel, token):
         st.warning(f"⚠️ Não foi possível salvar cópia do arquivo: {e}")
         logger.error(f"Erro ao salvar arquivo enviado: {e}")
 
-# === INTERFACE PRINCIPAL DO STREAMLIT ===
+# === INTERFACE STREAMLIT ===
 def main():
-    """Interface principal da aplicação"""
+    st.set_page_config(
+        page_title="Upload e Gestão de Planilhas", 
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+
+    # Header com logo (se disponível)
+    st.markdown(
+        '''
+        <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
+            <h2 style="margin: 0; color: #2E8B57;">📊 DSView BI – Upload de Planilhas</h2>
+        </div>
+        ''',
+        unsafe_allow_html=True
+    )
+
+    # Sidebar navigation
+    st.sidebar.markdown("### 📤 Upload de Planilhas")
+    st.sidebar.markdown("Sistema de consolidação de relatórios")
+    st.sidebar.divider()
+    st.sidebar.markdown("**Status do Sistema:**")
     
-    # Título e descrição
-    st.title("📊 Upload Reports Consolidado")
-    st.markdown("**Sistema de consolidação de relatórios de vendas CTs**")
-    
-    # Sidebar com informações
-    with st.sidebar:
-        st.header("ℹ️ Informações")
-        st.markdown("""
-        **Como usar:**
-        1. Faça upload do arquivo Excel
-        2. Verifique o nome do responsável
-        3. Clique em "Processar Consolidação"
-        
-        **Requisitos do arquivo:**
-        - Formato: .xlsx
-        - Aba: "Vendas CTs"
-        - Coluna obrigatória: "DATA"
-        """)
-        
-        # Status de conexão
-        st.header("🔗 Status de Conexão")
-        token = obter_token()
-        if token:
-            st.success("✅ Conectado")
-        else:
-            st.error("❌ Falha na conexão")
-            st.stop()
-    
-    # Área principal
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.header("📁 Upload do Arquivo")
-        
-        # Upload do arquivo
-        arquivo_upload = st.file_uploader(
-            "Escolha o arquivo Excel",
-            type=['xlsx'],
-            help="Arquivo deve conter uma aba chamada 'Vendas CTs'"
-        )
-        
-        if arquivo_upload is not None:
-            try:
-                # Ler arquivo
-                with st.spinner("📖 Lendo arquivo..."):
-                    df = pd.read_excel(arquivo_upload, sheet_name="Vendas CTs")
+    # Verificar autenticação
+    token = obter_token()
+    if not token:
+        st.sidebar.error("❌ Desconectado")
+        st.error("❌ Não foi possível autenticar. Verifique as credenciais.")
+        st.stop()
+    else:
+        st.sidebar.success("✅ Conectado")
+
+    st.markdown("## 📤 Upload de Planilha Excel")
+    st.divider()
+
+    # Upload de arquivo
+    uploaded_file = st.file_uploader(
+        "Escolha um arquivo Excel", 
+        type=["xlsx", "xls"],
+        help="Formatos aceitos: .xlsx, .xls"
+    )
+
+    # Campo obrigatório para responsável
+    responsavel = st.text_input(
+        "Digite seu nome (responsável): *", 
+        placeholder="Ex: João Silva",
+        help="Este campo é obrigatório",
+        max_chars=100
+    )
+
+    # Processar arquivo carregado
+    df = None
+    if uploaded_file:
+        try:
+            # Detectar tipo de arquivo
+            file_extension = uploaded_file.name.split('.')[-1].lower()
+            
+            with st.spinner("📖 Lendo arquivo..."):
+                if file_extension == 'xls':
+                    xls = pd.ExcelFile(uploaded_file, engine='xlrd')
+                else:
+                    xls = pd.ExcelFile(uploaded_file)
                 
-                # Limpar nomes das colunas
+                sheets = xls.sheet_names
+                
+                # Selecionar aba
+                if len(sheets) > 1:
+                    # Verificar se existe aba "Vendas CTs" 
+                    if "Vendas CTs" in sheets:
+                        sheet = "Vendas CTs"
+                        st.info("✅ Aba 'Vendas CTs' encontrada e selecionada automaticamente")
+                    else:
+                        sheet = st.selectbox(
+                            "Selecione a aba (recomendado: 'Vendas CTs'):", 
+                            sheets,
+                            help="Para melhor compatibilidade, use uma aba chamada 'Vendas CTs'"
+                        )
+                        if sheet != "Vendas CTs":
+                            st.warning("⚠️ Recomendamos que a aba seja chamada 'Vendas CTs'")
+                else:
+                    sheet = sheets[0]
+                    if sheet != "Vendas CTs":
+                        st.warning(f"⚠️ A aba atual se chama '{sheet}'. Recomendamos renomeá-la para 'Vendas CTs'")
+                
+                # Ler dados
+                df = pd.read_excel(uploaded_file, sheet_name=sheet)
                 df.columns = df.columns.str.strip().str.upper()
                 
-                st.success(f"✅ Arquivo carregado: {len(df)} linhas")
-                
-                # Mostrar preview dos dados
-                with st.expander("👀 Preview dos Dados"):
-                    st.dataframe(df.head(10), use_container_width=True)
-                
-                # Detectar responsável
-                responsavel_detectado, metodo = extrair_responsavel_da_planilha(df)
-                
-                if responsavel_detectado:
-                    st.info(f"🎯 Responsável detectado: **{responsavel_detectado}** ({metodo})")
-                    responsavel_input = st.text_input(
-                        "Nome do Responsável",
-                        value=responsavel_detectado,
-                        help="Confirme ou corrija o nome do responsável"
-                    )
-                else:
-                    st.warning("⚠️ Responsável não detectado automaticamente")
-                    responsavel_input = st.text_input(
-                        "Nome do Responsável",
-                        placeholder="Digite o nome completo do responsável",
-                        help="Campo obrigatório"
-                    )
-                
-                # Validação dos dados
-                if responsavel_input:
-                    erros, avisos, linhas_invalidas = validar_dados_enviados(df, responsavel_input)
-                    
-                    # Mostrar erros
-                    if erros:
-                        st.error("❌ **Erros encontrados:**")
-                        for erro in erros:
-                            st.error(erro)
-                    
-                    # Mostrar avisos
-                    if avisos:
-                        st.warning("⚠️ **Avisos:**")
-                        for aviso in avisos:
-                            st.warning(aviso)
-                    
-                    # Mostrar linhas inválidas se existirem
-                    if linhas_invalidas:
-                        with st.expander("📋 Detalhes das Linhas com Datas Inválidas"):
-                            df_invalidas = pd.DataFrame(linhas_invalidas)
-                            st.dataframe(df_invalidas, use_container_width=True, hide_index=True)
-                    
-                    # Botão de processamento
-                    if not erros:
-                        st.divider()
-                        
-                        col_btn1, col_btn2 = st.columns([1, 1])
-                        
-                        with col_btn1:
-                            if st.button("🚀 Processar Consolidação", type="primary", use_container_width=True):
-                                with st.spinner("🔄 Processando..."):
-                                    sucesso = processar_consolidacao(df, responsavel_input, token)
-                                    
-                                    if sucesso:
-                                        st.balloons()
-                        
-                        with col_btn2:
-                            if st.button("🔄 Recarregar Página", use_container_width=True):
-                                st.rerun()
-                    
-                    else:
-                        st.error("❌ Corrija os erros antes de prosseguir")
-                        
-            except Exception as e:
-                st.error(f"❌ Erro ao processar arquivo: {str(e)}")
-                if "Vendas CTs" in str(e):
-                    st.info("💡 Certifique-se de que o arquivo possui uma aba chamada 'Vendas CTs'")
-    
-    with col2:
-        st.header("📈 Estatísticas")
-        
-        if arquivo_upload is not None:
-            try:
-                # Mostrar estatísticas do arquivo
-                st.metric("📄 Total de Linhas", len(df))
-                st.metric("📊 Total de Colunas", len(df.columns))
-                
-                # Verificar se tem coluna DATA
-                if "DATA" in df.columns:
-                    df_temp = df.copy()
-                    df_temp["DATA"] = pd.to_datetime(df_temp["DATA"], errors="coerce")
-                    df_temp = df_temp.dropna(subset=["DATA"])
-                    
-                    if not df_temp.empty:
-                        data_min = df_temp["DATA"].min().strftime("%d/%m/%Y")
-                        data_max = df_temp["DATA"].max().strftime("%d/%m/%Y")
-                        st.metric("📅 Período", f"{data_min} - {data_max}")
-                        st.metric("✅ Datas Válidas", len(df_temp))
-                
-                # Mostrar colunas encontradas
-                with st.expander("📋 Colunas do Arquivo"):
-                    for col in df.columns:
-                        st.text(f"• {col}")
-                        
-            except:
-                pass
-        else:
-            st.info("📁 Faça upload de um arquivo para ver as estatísticas")
+            st.success(f"✅ Arquivo carregado: {uploaded_file.name}")
+            
+        except Exception as e:
+            st.error(f"❌ Erro ao ler o Excel: {e}")
+            logger.error(f"Erro ao ler Excel: {e}")
 
-# === EXECUTAR APLICAÇÃO ===
+    # Mostrar prévia e validações
+    if df is not None:
+        # Prévia dos dados
+        st.subheader("👀 Prévia dos dados")
+        st.dataframe(df.head(10), use_container_width=True, height=300)
+
+        # Resumo dos dados
+        st.subheader("📊 Resumo dos dados")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Linhas", df.shape[0])
+        with col2:
+            st.metric("Colunas", df.shape[1])
+        with col3:
+            if "DATA" in df.columns:
+                datas_validas = pd.to_datetime(df["DATA"], errors="coerce").notna().sum()
+                st.metric("Datas válidas", datas_validas)
+
+        # Resumo de totais por produto
+        st.subheader("💰 Resumo de Totais por Produto")
+        
+        # Lista das colunas de produtos corrigidas
+        colunas_produtos = ['TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 'TMO - VERNIZ', 'CX EVAP']
+        
+        # Encontrar colunas que existem no DataFrame
+        colunas_encontradas = [col for col in colunas_produtos if col in df.columns]
+        
+        if colunas_encontradas:
+            # Calcular totais
+            totais = {}
+            total_geral = 0
+            
+            for coluna in colunas_encontradas:
+                # Converter para numérico, tratando erros como 0
+                valores_numericos = pd.to_numeric(df[coluna], errors='coerce').fillna(0)
+                total = int(valores_numericos.sum())  # Converter para inteiro
+                totais[coluna] = total
+                total_geral += total
+            
+            # Calcular TMO - Total se houver colunas TMO
+            colunas_tmo = [col for col in colunas_encontradas if col.startswith('TMO -')]
+            if colunas_tmo:
+                tmo_total = sum(totais[col] for col in colunas_tmo)
+                totais['TMO - TOTAL'] = tmo_total
+            
+            # Exibir métricas em colunas
+            produtos_para_exibir = [col for col in colunas_produtos if col in totais]
+            if 'TMO - TOTAL' in totais:
+                produtos_para_exibir.append('TMO - TOTAL')
+            
+            num_colunas = len(produtos_para_exibir)
+            cols = st.columns(num_colunas)
+            
+            # Mostrar totais por produto
+            for i, coluna in enumerate(produtos_para_exibir):
+                with cols[i]:
+                    total = totais[coluna]
+                    # Formatar número com separadores de milhares (formato inteiro)
+                    total_formatado = f"{total:,}".replace(',', '.')
+                    
+                    # Definir emoji baseado no produto
+                    if 'DUTO' in coluna:
+                        emoji = "🔧"
+                    elif 'FREIO' in coluna:
+                        emoji = "🚗"
+                    elif 'SANIT' in coluna:
+                        emoji = "🧽"
+                    elif 'VERNIZ' in coluna:
+                        emoji = "🎨"
+                    elif 'EVAP' in coluna:
+                        emoji = "📦"
+                    elif 'TOTAL' in coluna:
+                        emoji = "💰"
+                    else:
+                        emoji = "📊"
+                    
+                    # Nome simplificado para exibição
+                    nome_display = coluna.replace('TMO - ', '').title()
+                    
+                    st.metric(f"{emoji} {nome_display}", total_formatado)
+            
+            # Tabela resumo adicional
+            with st.expander("📋 Detalhes dos Totais"):
+                resumo_data = []
+                for coluna in produtos_para_exibir:
+                    total = totais[coluna]
+                    nome_produto = coluna.replace('TMO - ', '').title()
+                    resumo_data.append({
+                        'Produto': nome_produto,
+                        'Total': f"{total:,}".replace(',', '.'),
+                        'Registros': (pd.to_numeric(df[coluna], errors='coerce') > 0).sum() if coluna in df.columns else 0
+                    })
+                
+                df_resumo = pd.DataFrame(resumo_data)
+                st.dataframe(df_resumo, use_container_width=True, hide_index=True)
+        else:
+            st.warning("⚠️ Nenhuma coluna de produtos encontrada")
+            
+            # Mostrar colunas disponíveis para ajudar o usuário
+            with st.expander("🔍 Ver colunas disponíveis"):
+                colunas_disponiveis = [col for col in df.columns if col != 'DATA']
+                st.write("**Colunas encontradas na planilha:**")
+                for col in colunas_disponiveis:
+                    st.write(f"• {col}")
+                st.info("💡 **Dica:** Renomeie as colunas na sua planilha para: TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP")
+
+        # Verificar colunas com valores nulos
+        colunas_nulas = df.columns[df.isnull().any()].tolist()
+        if colunas_nulas:
+            st.warning(f"⚠️ Colunas com valores nulos: {', '.join(colunas_nulas[:5])}")
+            if len(colunas_nulas) > 5:
+                st.warning(f"... e mais {len(colunas_nulas) - 5} colunas")
+        else:
+            st.success("✅ Nenhuma coluna com valores nulos.")
+
+        # Validações antes do envio
+        st.subheader("🔍 Validações")
+        erros, avisos, linhas_invalidas_detalhes = validar_dados_enviados(df, responsavel)
+        
+        # Mostrar avisos
+        for aviso in avisos:
+            st.warning(aviso)
+        
+        # Mostrar detalhes das linhas inválidas se existirem
+        if linhas_invalidas_detalhes:
+            st.error("❗ **ATENÇÃO: As seguintes linhas têm datas inválidas e NÃO serão incluídas na consolidação:**")
+            
+            # Converter para DataFrame para melhor visualização
+            df_invalidas = pd.DataFrame(linhas_invalidas_detalhes)
+            
+            # Limitar exibição para não sobrecarregar
+            if len(df_invalidas) <= 20:
+                st.dataframe(df_invalidas, use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(df_invalidas.head(20), use_container_width=True, hide_index=True)
+                st.warning(f"... e mais {len(df_invalidas) - 20} linhas com datas inválidas")
+            
+            st.error("🔧 **Para incluir essas linhas:** Corrija as datas na planilha original e envie novamente.")
+        
+        # Mostrar erros
+        if erros:
+            for erro in erros:
+                st.error(erro)
+        else:
+            if not linhas_invalidas_detalhes:
+                st.success("✅ Todos os dados estão válidos para consolidação")
+            else:
+                st.warning("⚠️ Dados válidos serão consolidados. Corrija as datas inválidas para incluir todas as linhas.")
+
+        # Botão de envio
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button("📧 Consolidar Dados", type="primary", disabled=bool(erros)):
+                if erros:
+                    st.error("❌ Corrija os erros acima antes de prosseguir")
+                else:
+                    sucesso = processar_consolidacao(df, responsavel, token)
+                    if sucesso:
+                        st.balloons()
+                        
+        with col2:
+            if st.button("🔄 Limpar", type="secondary"):
+                st.rerun()
+
+    # Rodapé com informações
+    st.divider()
+    st.markdown(
+        """
+        <div style="text-align: center; color: #666; font-size: 0.8em;">
+            DSView BI - Sistema de Consolidação de Relatórios<br>
+            ⚠️ Certifique-se de que sua planilha contenha:<br>
+            • Uma aba chamada <strong>'Vendas CTs'</strong><br>
+            • Uma coluna <strong>'DATA'</strong><br>
+            • Colunas: <strong>TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP</strong><br>
+            • Informe o nome do <strong>responsável</strong>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 if __name__ == "__main__":
     main()
