@@ -6,6 +6,8 @@ from io import BytesIO
 from msal import ConfidentialClientApplication
 import unicodedata
 import logging
+import re
+import os
 
 # Configurar logging para debug
 logging.basicConfig(level=logging.INFO)
@@ -50,6 +52,37 @@ def obter_token():
         return None
 
 # === FUNÇÕES AUXILIARES ===
+def extrair_responsavel_do_arquivo(nome_arquivo):
+    """Extrai o nome do responsável do nome do arquivo"""
+    try:
+        # Remove extensão
+        nome_sem_extensao = os.path.splitext(nome_arquivo)[0]
+        
+        # Remove palavras comuns que não são nomes (opcional)
+        palavras_ignorar = ['relatorio', 'report', 'vendas', 'dados', 'planilha', 'excel', 'cts']
+        
+        # Limpa o nome removendo caracteres especiais e números
+        nome_limpo = re.sub(r'[0-9_-]', ' ', nome_sem_extensao)
+        nome_limpo = re.sub(r'\s+', ' ', nome_limpo).strip()
+        
+        # Se o nome estiver vazio ou muito curto, usar nome do arquivo original
+        if len(nome_limpo) < 3:
+            nome_limpo = nome_sem_extensao.replace('_', ' ').replace('-', ' ')
+        
+        # Capitalizar primeira letra de cada palavra
+        responsavel = ' '.join(word.capitalize() for word in nome_limpo.split() 
+                              if word.lower() not in palavras_ignorar and len(word) > 1)
+        
+        # Se ainda estiver vazio, usar o nome original do arquivo
+        if not responsavel.strip():
+            responsavel = nome_sem_extensao
+            
+        return responsavel.strip()
+        
+    except Exception as e:
+        logger.error(f"Erro ao extrair responsável: {e}")
+        return nome_arquivo
+
 def criar_pasta_se_nao_existir(caminho_pasta, token):
     """Cria pasta no OneDrive se não existir"""
     try:
@@ -151,17 +184,11 @@ def upload_onedrive(nome_arquivo, conteudo_arquivo, token):
         return False, 500, f"Erro interno: {str(e)}"
 
 # === FUNÇÕES DE CONSOLIDAÇÃO ===
-def validar_dados_enviados(df, responsavel):
+def validar_dados_enviados(df, nome_arquivo):
     """Valida os dados enviados pelo usuário"""
     erros = []
     avisos = []
     linhas_invalidas_detalhes = []
-    
-    # Validar responsável
-    if not responsavel or not responsavel.strip():
-        erros.append("⚠️ O nome do responsável é obrigatório")
-    elif len(responsavel.strip()) < 2:
-        erros.append("⚠️ O nome do responsável deve ter pelo menos 2 caracteres")
     
     # Validar se DataFrame não está vazio
     if df.empty:
@@ -209,32 +236,115 @@ def validar_dados_enviados(df, responsavel):
     
     return erros, avisos, linhas_invalidas_detalhes
 
-def processar_consolidacao(df_novo, responsavel, token):
-    """Processa a consolidação dos dados - Atualiza ou insere linha por linha"""
+def baixar_arquivo_consolidado(token):
+    """Baixa o arquivo consolidado existente"""
     consolidado_nome = "Reports_Geral_Consolidado.xlsx"
-
-    # 1. Baixar arquivo consolidado existente
     url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{PASTA}/{consolidado_nome}:/content"
     headers = {"Authorization": f"Bearer {token}"}
     
-    with st.spinner("📥 Baixando arquivo consolidado existente..."):
-        r = requests.get(url, headers=headers)
-
-    if r.status_code == 200:
-        try:
-            df_consolidado = pd.read_excel(BytesIO(r.content))
+    try:
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            df_consolidado = pd.read_excel(BytesIO(response.content))
             df_consolidado.columns = df_consolidado.columns.str.strip().str.upper()
-            st.info(f"📂 Arquivo consolidado existente carregado ({len(df_consolidado)} registros)")
-        except Exception as e:
-            st.warning(f"⚠️ Erro ao ler arquivo consolidado existente: {e}")
-            df_consolidado = pd.DataFrame()
+            return df_consolidado, True
+        else:
+            return pd.DataFrame(), False
+            
+    except Exception as e:
+        logger.error(f"Erro ao baixar arquivo consolidado: {e}")
+        return pd.DataFrame(), False
+
+def comparar_e_atualizar_registros(df_consolidado, df_novo, responsavel):
+    """Compara registros usando RESPONSÁVEL e DATA e atualiza conforme necessário"""
+    registros_atualizados = 0
+    registros_inseridos = 0
+    registros_ignorados = 0
+    
+    if df_consolidado.empty:
+        # Primeiro envio - todos os registros são novos
+        df_final = df_novo.copy()
+        registros_inseridos = len(df_novo)
+        return df_final, registros_inseridos, registros_atualizados, registros_ignorados
+    
+    # Garantir que as colunas existem no consolidado
+    colunas = df_novo.columns.tolist()
+    for col in colunas:
+        if col not in df_consolidado.columns:
+            df_consolidado[col] = None
+    
+    # Processar cada linha do arquivo novo
+    for idx, row_nova in df_novo.iterrows():
+        data_nova = row_nova["DATA"]
+        responsavel_novo = row_nova["RESPONSÁVEL"]
+        
+        # Buscar registros existentes com mesma data e responsável
+        mask_existente = (
+            (df_consolidado["DATA"].dt.normalize() == data_nova.normalize()) &
+            (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == responsavel_novo.strip().upper())
+        )
+        
+        registros_existentes = df_consolidado[mask_existente]
+        
+        if registros_existentes.empty:
+            # Novo registro - inserir
+            new_row = pd.DataFrame([row_nova])
+            df_consolidado = pd.concat([df_consolidado, new_row], ignore_index=True)
+            registros_inseridos += 1
+        else:
+            # Verificar se os valores são diferentes
+            registro_existente = registros_existentes.iloc[0]
+            
+            # Comparar apenas colunas de dados (excluir metadados)
+            colunas_comparacao = [col for col in colunas if col not in ["RESPONSÁVEL", "DATA"]]
+            
+            valores_diferentes = False
+            for col in colunas_comparacao:
+                if col in registro_existente.index:
+                    valor_novo = row_nova[col]
+                    valor_existente = registro_existente[col]
+                    
+                    # Tratar valores NaN e comparar
+                    if pd.isna(valor_novo) and pd.isna(valor_existente):
+                        continue
+                    elif pd.isna(valor_novo) or pd.isna(valor_existente):
+                        valores_diferentes = True
+                        break
+                    elif str(valor_novo).strip() != str(valor_existente).strip():
+                        valores_diferentes = True
+                        break
+            
+            if valores_diferentes:
+                # Atualizar registro existente
+                index_existente = registros_existentes.index[0]
+                df_consolidado.loc[index_existente, colunas] = row_nova.values
+                registros_atualizados += 1
+            else:
+                # Registro idêntico - ignorar
+                registros_ignorados += 1
+    
+    return df_consolidado, registros_inseridos, registros_atualizados, registros_ignorados
+
+def processar_consolidacao(df_novo, nome_arquivo, token):
+    """Processa a consolidação dos dados com lógica melhorada"""
+    
+    # Extrair responsável do nome do arquivo
+    responsavel = extrair_responsavel_do_arquivo(nome_arquivo)
+    st.info(f"👤 Responsável identificado: **{responsavel}**")
+    
+    # 1. Baixar arquivo consolidado existente
+    with st.spinner("📥 Baixando arquivo consolidado existente..."):
+        df_consolidado, arquivo_existe = baixar_arquivo_consolidado(token)
+    
+    if arquivo_existe:
+        st.info(f"📂 Arquivo consolidado carregado ({len(df_consolidado)} registros)")
     else:
-        df_consolidado = pd.DataFrame()
         st.info("📂 Criando novo arquivo consolidado")
 
     # 2. Preparar dados novos
     df_novo = df_novo.copy()
-    df_novo["RESPONSÁVEL"] = responsavel.strip()
+    df_novo["RESPONSÁVEL"] = responsavel
     df_novo.columns = df_novo.columns.str.strip().str.upper()
     
     # Converter datas e remover linhas inválidas
@@ -249,76 +359,30 @@ def processar_consolidacao(df_novo, responsavel, token):
     if linhas_invalidas > 0:
         st.info(f"🧹 {linhas_invalidas} linhas com datas inválidas foram removidas")
 
-    # 3. Consolidar linha por linha (comparação completa)
-    registros_atualizados = 0
-    registros_inseridos = 0
-    registros_ignorados = 0
-    
+    # 3. Processar consolidação com lógica melhorada
     with st.spinner("🔄 Processando consolidação..."):
         if not df_consolidado.empty:
             df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
             df_consolidado = df_consolidado.dropna(subset=["DATA"])
-            colunas = df_novo.columns.tolist()
+        
+        df_final, inseridos, atualizados, ignorados = comparar_e_atualizar_registros(
+            df_consolidado, df_novo, responsavel
+        )
 
-            # Garantir que as colunas existem no consolidado
-            for col in colunas:
-                if col not in df_consolidado.columns:
-                    df_consolidado[col] = None
-
-            for idx, row_nova in df_novo.iterrows():
-                # Buscar registros com mesma data e responsável
-                cond = (
-                    (df_consolidado["DATA"].dt.normalize() == row_nova["DATA"].normalize()) &
-                    (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == row_nova["RESPONSÁVEL"].strip().upper())
-                )
-                possiveis = df_consolidado[cond]
-
-                # Verificar se já existe linha idêntica
-                linha_identica_encontrada = False
-                
-                if not possiveis.empty:
-                    # Comparar valores das colunas principais (exceto metadados)
-                    colunas_comparacao = [col for col in colunas if col not in ["RESPONSÁVEL"]]
-                    
-                    for _, row_existente in possiveis.iterrows():
-                        if all(pd.isna(row_nova[col]) and pd.isna(row_existente[col]) or 
-                               str(row_nova[col]).strip() == str(row_existente[col]).strip() 
-                               for col in colunas_comparacao if col in row_existente.index):
-                            registros_ignorados += 1
-                            linha_identica_encontrada = True
-                            break
-                    
-                    # Se não encontrou linha idêntica, atualizar primeiro registro
-                    if not linha_identica_encontrada:
-                        index = possiveis.index[0]
-                        df_consolidado.loc[index, colunas] = row_nova.values
-                        registros_atualizados += 1
-                else:
-                    # Inserir novo registro
-                    new_row = pd.DataFrame([row_nova])
-                    df_consolidado = pd.concat([df_consolidado, new_row], ignore_index=True)
-                    registros_inseridos += 1
-
-            df_final = df_consolidado.copy()
-        else:
-            df_final = df_novo.copy()
-            registros_inseridos = len(df_novo)
-            st.info("📂 Primeiro envio - criando arquivo consolidado")
-
-    # 4. Ordenar e salvar
+    # 4. Ordenar por data e responsável
     df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"], na_position='last').reset_index(drop=True)
     
-    # Salvar em buffer
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df_final.to_excel(writer, index=False, sheet_name="Vendas CTs")
-    buffer.seek(0)
-
-    # 5. Salvar cópia do arquivo enviado
-    salvar_arquivo_enviado(df_novo, responsavel, token)
+    # 5. Salvar arquivo enviado com nome original
+    salvar_arquivo_enviado(df_novo, nome_arquivo, responsavel, token)
     
-    # 6. Upload do arquivo consolidado
-    with st.spinner("📤 Enviando arquivo consolidado..."):
+    # 6. Salvar arquivo consolidado
+    with st.spinner("📤 Salvando arquivo consolidado..."):
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_final.to_excel(writer, index=False, sheet_name="Vendas CTs")
+        buffer.seek(0)
+        
+        consolidado_nome = "Reports_Geral_Consolidado.xlsx"
         sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
 
     if sucesso:
@@ -329,11 +393,11 @@ def processar_consolidacao(df_novo, responsavel, token):
         with col1:
             st.metric("📊 Total de registros", len(df_final))
         with col2:
-            st.metric("➕ Inseridos", registros_inseridos)
+            st.metric("➕ Inseridos", inseridos)
         with col3:
-            st.metric("🔁 Atualizados", registros_atualizados)
+            st.metric("🔁 Atualizados", atualizados)
         with col4:
-            st.metric("⏭️ Ignorados", registros_ignorados)
+            st.metric("⏭️ Ignorados", ignorados)
         
         # Informações do período
         if not df_novo.empty:
@@ -348,17 +412,17 @@ def processar_consolidacao(df_novo, responsavel, token):
             st.code(resposta)
         return False
 
-def salvar_arquivo_enviado(df, responsavel, token):
-    """Salva uma cópia do arquivo enviado pelo responsável"""
+def salvar_arquivo_enviado(df, nome_arquivo_original, responsavel, token):
+    """Salva o arquivo enviado com o nome original na pasta de enviados"""
     try:
         if not df.empty and "DATA" in df.columns:
             data_base = df["DATA"].min()
             nome_pasta = f"Relatorios_Enviados/{data_base.strftime('%Y-%m')}"
             timestamp = datetime.now().strftime('%d-%m-%Y_%Hh%M')
             
-            # Limpar nome do responsável para uso em arquivo
-            responsavel_limpo = "".join(c for c in responsavel.strip() if c.isalnum() or c in (' ', '-', '_')).strip()
-            nome_arquivo = f"{nome_pasta}/{responsavel_limpo}_{timestamp}.xlsx"
+            # Usar nome original do arquivo com timestamp
+            nome_sem_extensao = os.path.splitext(nome_arquivo_original)[0]
+            nome_arquivo = f"{nome_pasta}/{nome_sem_extensao}_{timestamp}.xlsx"
             
             # Salvar arquivo
             buffer_envio = BytesIO()
@@ -368,7 +432,7 @@ def salvar_arquivo_enviado(df, responsavel, token):
             
             sucesso, _, _ = upload_onedrive(nome_arquivo, buffer_envio.read(), token)
             if sucesso:
-                st.info(f"💾 Cópia salva em: {nome_arquivo}")
+                st.info(f"💾 Arquivo salvo como: {nome_arquivo}")
             else:
                 st.warning("⚠️ Não foi possível salvar cópia do arquivo enviado")
                 
@@ -410,27 +474,25 @@ def main():
         st.sidebar.success("✅ Conectado")
 
     st.markdown("## 📤 Upload de Planilha Excel")
+    st.info("💡 **Novidade**: O responsável será identificado automaticamente pelo nome do arquivo!")
     st.divider()
 
     # Upload de arquivo
     uploaded_file = st.file_uploader(
         "Escolha um arquivo Excel", 
         type=["xlsx", "xls"],
-        help="Formatos aceitos: .xlsx, .xls"
-    )
-
-    # Campo obrigatório para responsável
-    responsavel = st.text_input(
-        "Digite seu nome (responsável): *", 
-        placeholder="Ex: João Silva",
-        help="Este campo é obrigatório",
-        max_chars=100
+        help="Formatos aceitos: .xlsx, .xls | O responsável será extraído do nome do arquivo"
     )
 
     # Processar arquivo carregado
     df = None
     if uploaded_file:
         try:
+            # Mostrar responsável identificado
+            responsavel_identificado = extrair_responsavel_do_arquivo(uploaded_file.name)
+            st.success(f"📁 Arquivo: **{uploaded_file.name}**")
+            st.info(f"👤 Responsável identificado: **{responsavel_identificado}**")
+            
             # Detectar tipo de arquivo
             file_extension = uploaded_file.name.split('.')[-1].lower()
             
@@ -447,7 +509,7 @@ def main():
                     # Verificar se existe aba "Vendas CTs" 
                     if "Vendas CTs" in sheets:
                         sheet = "Vendas CTs"
-                        st.info("✅ Aba 'Vendas CTs' encontrada e selecionada automaticamente")
+                        st.success("✅ Aba 'Vendas CTs' encontrada e selecionada automaticamente")
                     else:
                         sheet = st.selectbox(
                             "Selecione a aba (recomendado: 'Vendas CTs'):", 
@@ -465,7 +527,7 @@ def main():
                 df = pd.read_excel(uploaded_file, sheet_name=sheet)
                 df.columns = df.columns.str.strip().str.upper()
                 
-            st.success(f"✅ Arquivo carregado: {uploaded_file.name}")
+            st.success(f"✅ Dados carregados com sucesso!")
             
         except Exception as e:
             st.error(f"❌ Erro ao ler o Excel: {e}")
@@ -588,7 +650,7 @@ def main():
 
         # Validações antes do envio
         st.subheader("🔍 Validações")
-        erros, avisos, linhas_invalidas_detalhes = validar_dados_enviados(df, responsavel)
+        erros, avisos, linhas_invalidas_detalhes = validar_dados_enviados(df, uploaded_file.name)
         
         # Mostrar avisos
         for aviso in avisos:
@@ -627,7 +689,7 @@ def main():
                 if erros:
                     st.error("❌ Corrija os erros acima antes de prosseguir")
                 else:
-                    sucesso = processar_consolidacao(df, responsavel, token)
+                    sucesso = processar_consolidacao(df, uploaded_file.name, token)
                     if sucesso:
                         st.balloons()
                         
@@ -645,7 +707,7 @@ def main():
             • Uma aba chamada <strong>'Vendas CTs'</strong><br>
             • Uma coluna <strong>'DATA'</strong><br>
             • Colunas: <strong>TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP</strong><br>
-            • Informe o nome do <strong>responsável</strong>
+            • O responsável será <strong>identificado automaticamente</strong> pelo nome do arquivo
         </div>
         """,
         unsafe_allow_html=True
