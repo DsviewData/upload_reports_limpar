@@ -11,9 +11,19 @@ import os
 # ===========================
 # CONFIGURAÇÕES DE VERSÃO
 # ===========================
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 VERSION_DATE = "2025-08-07"
 CHANGELOG = {
+    "2.2.0": {
+        "date": "2025-08-07",
+        "changes": [
+            "📁 Separação de pastas: arquivos enviados e backups agora ficam em pasta separada",
+            "🗂️ Nova estrutura: consolidado em FontedeDados, envios/backups em PlanilhasEnviadas_Backups",
+            "💾 Sistema de backup melhorado com localização dedicada",
+            "📊 Interface atualizada mostrando localização dos arquivos",
+            "🔧 Funções de upload especializadas por tipo de arquivo"
+        ]
+    },
     "2.1.0": {
         "date": "2025-08-07",
         "changes": [
@@ -56,7 +66,17 @@ except KeyError as e:
     st.error(f"❌ Credencial não encontrada: {e}")
     st.stop()
 
-PASTA = "Documentos Compartilhados/LimparAuto/FontedeDados"
+# ===========================
+# CONFIGURAÇÃO DE PASTAS - v2.2.0
+# ===========================
+# PASTA PRINCIPAL - onde fica o arquivo consolidado
+PASTA_CONSOLIDADO = "Documentos Compartilhados/LimparAuto/FontedeDados"
+
+# NOVA PASTA - para arquivos enviados e backups
+PASTA_ENVIOS_BACKUPS = "Documentos Compartilhados/PlanilhasEnviadas_Backups/LimparAuto"
+
+# Manter compatibilidade (algumas funções ainda usam)
+PASTA = PASTA_CONSOLIDADO
 
 # ===========================
 # AUTENTICAÇÃO
@@ -133,12 +153,52 @@ def criar_pasta_se_nao_existir(caminho_pasta, token):
         logger.warning(f"Erro ao criar estrutura de pastas: {e}")
 
 # ===========================
-# UPLOAD E BACKUP
+# UPLOAD E BACKUP - v2.2.0
 # ===========================
-def mover_arquivo_existente(nome_arquivo, token):
+def upload_onedrive(nome_arquivo, conteudo_arquivo, token, tipo_arquivo="consolidado"):
+    """
+    Faz upload de arquivo para OneDrive com pasta específica baseada no tipo
+    
+    tipo_arquivo: "consolidado", "enviado", "backup"
+    """
+    try:
+        # Determinar pasta baseada no tipo
+        if tipo_arquivo == "consolidado":
+            pasta_base = PASTA_CONSOLIDADO
+        elif tipo_arquivo in ["enviado", "backup"]:
+            pasta_base = PASTA_ENVIOS_BACKUPS
+        else:
+            pasta_base = PASTA_CONSOLIDADO  # fallback
+        
+        # Garantir que a pasta existe
+        pasta_arquivo = "/".join(nome_arquivo.split("/")[:-1]) if "/" in nome_arquivo else ""
+        if pasta_arquivo:
+            criar_pasta_se_nao_existir(f"{pasta_base}/{pasta_arquivo}", token)
+        
+        # Fazer backup se arquivo já existir (apenas para consolidado)
+        if tipo_arquivo == "consolidado" and "/" not in nome_arquivo:
+            mover_arquivo_existente(nome_arquivo, token, pasta_base)
+        
+        url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{pasta_base}/{nome_arquivo}:/content"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/octet-stream"
+        }
+        response = requests.put(url, headers=headers, data=conteudo_arquivo)
+        
+        return response.status_code in [200, 201], response.status_code, response.text
+        
+    except Exception as e:
+        logger.error(f"Erro no upload: {e}")
+        return False, 500, f"Erro interno: {str(e)}"
+
+def mover_arquivo_existente(nome_arquivo, token, pasta_base=None):
     """Move arquivo existente para backup antes de substituir"""
     try:
-        url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{PASTA}/{nome_arquivo}"
+        if pasta_base is None:
+            pasta_base = PASTA_CONSOLIDADO
+            
+        url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{pasta_base}/{nome_arquivo}"
         headers = {"Authorization": f"Bearer {token}"}
         response = requests.get(url, headers=headers)
         
@@ -164,31 +224,6 @@ def mover_arquivo_existente(nome_arquivo, token):
     except Exception as e:
         st.warning(f"⚠️ Erro ao processar backup: {str(e)}")
         logger.error(f"Erro no backup: {e}")
-
-def upload_onedrive(nome_arquivo, conteudo_arquivo, token):
-    """Faz upload de arquivo para OneDrive"""
-    try:
-        # Garantir que a pasta existe
-        pasta_arquivo = "/".join(nome_arquivo.split("/")[:-1]) if "/" in nome_arquivo else ""
-        if pasta_arquivo:
-            criar_pasta_se_nao_existir(f"{PASTA}/{pasta_arquivo}", token)
-        
-        # Fazer backup se arquivo já existir
-        if "/" not in nome_arquivo:  # Arquivo na raiz
-            mover_arquivo_existente(nome_arquivo, token)
-        
-        url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{PASTA}/{nome_arquivo}:/content"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/octet-stream"
-        }
-        response = requests.put(url, headers=headers, data=conteudo_arquivo)
-        
-        return response.status_code in [200, 201], response.status_code, response.text
-        
-    except Exception as e:
-        logger.error(f"Erro no upload: {e}")
-        return False, 500, f"Erro interno: {str(e)}"
 
 # ===========================
 # VALIDAÇÃO MELHORADA DE DATAS
@@ -498,13 +533,13 @@ def validar_dados_enviados(df):
     return erros, avisos, linhas_invalidas_detalhes
 
 # ===========================
-# FUNÇÕES DE CONSOLIDAÇÃO (mantidas iguais)
+# FUNÇÕES DE CONSOLIDAÇÃO - v2.2.0
 # ===========================
 
 def baixar_arquivo_consolidado(token):
-    """Baixa o arquivo consolidado existente"""
+    """Baixa o arquivo consolidado existente da pasta específica"""
     consolidado_nome = "Reports_Geral_Consolidado.xlsx"
-    url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{PASTA}/{consolidado_nome}:/content"
+    url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{PASTA_CONSOLIDADO}/{consolidado_nome}:/content"
     headers = {"Authorization": f"Bearer {token}"}
     
     try:
@@ -522,7 +557,7 @@ def baixar_arquivo_consolidado(token):
         return pd.DataFrame(), False
 
 def criar_backup_substituicoes(df_consolidado, detalhes_operacao, token):
-    """Cria backup dos registros que foram substituídos"""
+    """Cria backup dos registros que foram substituídos na pasta de backups"""
     try:
         # Extrair apenas operações de remoção
         removidos = [d for d in detalhes_operacao if d["Operação"] == "REMOVIDO"]
@@ -555,7 +590,7 @@ def criar_backup_substituicoes(df_consolidado, detalhes_operacao, token):
             df_backup["BACKUP_MOTIVO"] = "Substituição por novo envio"
             df_backup["APP_VERSION"] = APP_VERSION
             
-            # Salvar backup
+            # Salvar backup NA NOVA PASTA
             timestamp = datetime.now().strftime('%d-%m-%Y_%Hh%M')
             nome_backup = f"Backups_Substituicoes/backup_substituicao_{timestamp}.xlsx"
             
@@ -564,9 +599,10 @@ def criar_backup_substituicoes(df_consolidado, detalhes_operacao, token):
                 df_backup.to_excel(writer, index=False, sheet_name="Registros Substituidos")
             buffer.seek(0)
             
-            sucesso, _, _ = upload_onedrive(nome_backup, buffer.read(), token)
+            # USAR NOVA FUNÇÃO COM TIPO "backup"
+            sucesso, _, _ = upload_onedrive(nome_backup, buffer.read(), token, "backup")
             if sucesso:
-                st.info(f"💾 Backup dos dados substituídos criado: {nome_backup}")
+                st.info(f"💾 Backup dos dados substituídos criado: {PASTA_ENVIOS_BACKUPS}/{nome_backup}")
             else:
                 st.warning("⚠️ Não foi possível criar backup dos dados substituídos")
                 
@@ -682,10 +718,10 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo):
 
 def processar_consolidacao(df_novo, nome_arquivo, token):
     """
-    Versão melhorada do processamento de consolidação
+    Versão modificada do processamento de consolidação com pastas separadas - v2.2.0
     """
     
-    # 1. Baixar arquivo consolidado existente
+    # 1. Baixar arquivo consolidado existente DA PASTA ESPECÍFICA
     with st.spinner("📥 Baixando arquivo consolidado existente..."):
         df_consolidado, arquivo_existe = baixar_arquivo_consolidado(token)
     
@@ -791,14 +827,14 @@ def processar_consolidacao(df_novo, nome_arquivo, token):
     # 4. Ordenar por data e responsável
     df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"], na_position='last').reset_index(drop=True)
     
-    # 5. Criar backup dos dados removidos se houve substituições
+    # 5. Criar backup dos dados removidos se houve substituições (NOVA PASTA)
     if removidos > 0:
         criar_backup_substituicoes(df_consolidado, detalhes, token)
     
-    # 6. Salvar arquivo enviado com nome original
+    # 6. Salvar arquivo enviado com nome original (NOVA PASTA)
     salvar_arquivo_enviado(df_novo, nome_arquivo, token)
     
-    # 7. Salvar arquivo consolidado
+    # 7. Salvar arquivo consolidado (PASTA ORIGINAL)
     with st.spinner("📤 Salvando arquivo consolidado..."):
         buffer = BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -806,10 +842,19 @@ def processar_consolidacao(df_novo, nome_arquivo, token):
         buffer.seek(0)
         
         consolidado_nome = "Reports_Geral_Consolidado.xlsx"
-        sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
+        # USAR NOVA FUNÇÃO COM TIPO "consolidado"
+        sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token, "consolidado")
 
     if sucesso:
         st.success("✅ Consolidação realizada com sucesso!")
+        
+        # Mostrar localização dos arquivos - NOVA FUNCIONALIDADE v2.2.0
+        with st.expander("📁 Localização dos Arquivos", expanded=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.info(f"📊 **Arquivo Consolidado:**\n`{PASTA_CONSOLIDADO}/Reports_Geral_Consolidado.xlsx`")
+            with col2:
+                st.info(f"💾 **Backups e Envios:**\n`{PASTA_ENVIOS_BACKUPS}/`")
         
         # Métricas de resultado melhoradas
         col1, col2, col3, col4 = st.columns(4)
@@ -886,7 +931,7 @@ def processar_consolidacao(df_novo, nome_arquivo, token):
         return False
 
 def salvar_arquivo_enviado(df, nome_arquivo_original, token):
-    """Salva o arquivo enviado com o nome original na pasta de enviados"""
+    """Salva o arquivo enviado com o nome original na nova pasta de enviados"""
     try:
         if not df.empty and "DATA" in df.columns:
             data_base = df["DATA"].min()
@@ -903,9 +948,10 @@ def salvar_arquivo_enviado(df, nome_arquivo_original, token):
                 df.to_excel(writer, index=False, sheet_name="Vendas CTs")
             buffer_envio.seek(0)
             
-            sucesso, _, _ = upload_onedrive(nome_arquivo, buffer_envio.read(), token)
+            # USAR NOVA FUNÇÃO COM TIPO "enviado"
+            sucesso, _, _ = upload_onedrive(nome_arquivo, buffer_envio.read(), token, "enviado")
             if sucesso:
-                st.info(f"💾 Arquivo salvo como: {nome_arquivo}")
+                st.info(f"💾 Arquivo salvo como: {PASTA_ENVIOS_BACKUPS}/{nome_arquivo}")
             else:
                 st.warning("⚠️ Não foi possível salvar cópia do arquivo enviado")
                 
@@ -923,6 +969,13 @@ def exibir_info_versao():
         st.markdown("### ℹ️ Informações do Sistema")
         st.info(f"**Versão:** {APP_VERSION}")
         st.info(f"**Data:** {VERSION_DATE}")
+        
+        # NOVA FUNCIONALIDADE v2.2.0 - Mostrar configuração de pastas
+        with st.expander("📁 Configuração de Pastas"):
+            st.markdown("**Arquivo Consolidado:**")
+            st.code(PASTA_CONSOLIDADO, language=None)
+            st.markdown("**Backups e Envios:**")
+            st.code(PASTA_ENVIOS_BACKUPS, language=None)
         
         with st.expander("📋 Changelog"):
             for version, info in CHANGELOG.items():
@@ -974,6 +1027,24 @@ def main():
 
     st.markdown("## 📤 Upload de Planilha Excel")
     st.info("💡 **Importante**: A planilha deve conter uma coluna 'RESPONSÁVEL' com os nomes dos responsáveis!")
+    
+    # NOVA FUNCIONALIDADE v2.2.0 - Aviso sobre separação de pastas
+    with st.expander("📁 Nova Estrutura de Pastas - v2.2.0", expanded=False):
+        st.markdown("### 🎯 Organização Melhorada dos Arquivos")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**📊 Arquivo Consolidado:**")
+            st.code(f"{PASTA_CONSOLIDADO}/Reports_Geral_Consolidado.xlsx", language=None)
+            st.caption("Arquivo principal com todos os dados consolidados")
+            
+        with col2:
+            st.markdown("**💾 Backups e Envios:**")
+            st.code(f"{PASTA_ENVIOS_BACKUPS}/", language=None)
+            st.caption("Pasta separada para arquivos enviados e backups")
+        
+        st.success("✅ **Benefícios:** Melhor organização, backups separados e facilita a manutenção")
+    
     st.divider()
 
     # Upload de arquivo
@@ -1191,6 +1262,7 @@ def main():
             • Uma coluna <strong>'RESPONSÁVEL'</strong><br>
             • Colunas: <strong>TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP</strong><br>
             <br>
+            📁 <strong>v2.2.0:</strong> Nova organização com pastas separadas para melhor gestão de arquivos<br>
             <small>Última atualização: {VERSION_DATE}</small>
         </div>
         """,
