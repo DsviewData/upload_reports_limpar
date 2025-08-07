@@ -8,22 +8,63 @@ import unicodedata
 import logging
 import re
 
+# Configurar página do Streamlit
+st.set_page_config(
+    page_title="Upload Reports Consolidado",
+    page_icon="📊",
+    layout="wide"
+)
+
 # Configurar logging para debug
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # === CREDENCIAIS via st.secrets ===
-try:
-    CLIENT_ID = st.secrets["CLIENT_ID"]
-    CLIENT_SECRET = st.secrets["CLIENT_SECRET"]
-    TENANT_ID = st.secrets["TENANT_ID"]
-    EMAIL_ONEDRIVE = st.secrets["EMAIL_ONEDRIVE"]
-    SITE_ID = st.secrets["SITE_ID"]
-    DRIVE_ID = st.secrets["DRIVE_ID"]
-except KeyError as e:
-    st.error(f"❌ Credencial não encontrada: {e}")
+def verificar_credenciais():
+    """Verifica se todas as credenciais necessárias estão disponíveis"""
+    credenciais_necessarias = [
+        "CLIENT_ID", "CLIENT_SECRET", "TENANT_ID", 
+        "EMAIL_ONEDRIVE", "SITE_ID", "DRIVE_ID"
+    ]
+    
+    credenciais_faltantes = []
+    credenciais = {}
+    
+    for cred in credenciais_necessarias:
+        try:
+            credenciais[cred] = st.secrets[cred]
+        except KeyError:
+            credenciais_faltantes.append(cred)
+    
+    if credenciais_faltantes:
+        st.error("❌ **Erro de Configuração**")
+        st.error(f"Credenciais não encontradas: {', '.join(credenciais_faltantes)}")
+        st.info("📋 **Configuração necessária em `.streamlit/secrets.toml`:**")
+        st.code(f"""
+[secrets]
+CLIENT_ID = "seu_client_id"
+CLIENT_SECRET = "seu_client_secret"
+TENANT_ID = "seu_tenant_id"
+EMAIL_ONEDRIVE = "seu_email"
+SITE_ID = "seu_site_id"
+DRIVE_ID = "seu_drive_id"
+        """)
+        return None
+    
+    return credenciais
+
+# Verificar credenciais no início
+CREDENCIAIS = verificar_credenciais()
+if CREDENCIAIS is None:
     st.stop()
 
+# Definir constantes
+CLIENT_ID = CREDENCIAIS["CLIENT_ID"]
+CLIENT_SECRET = CREDENCIAIS["CLIENT_SECRET"]
+TENANT_ID = CREDENCIAIS["TENANT_ID"]
+EMAIL_ONEDRIVE = CREDENCIAIS["EMAIL_ONEDRIVE"]
+SITE_ID = CREDENCIAIS["SITE_ID"]
+DRIVE_ID = CREDENCIAIS["DRIVE_ID"]
 PASTA = "Documentos Compartilhados/LimparAuto/FontedeDados"
 
 # === AUTENTICAÇÃO ===
@@ -595,3 +636,164 @@ def salvar_arquivo_enviado(df, responsavel, token):
     except Exception as e:
         st.warning(f"⚠️ Não foi possível salvar cópia do arquivo: {e}")
         logger.error(f"Erro ao salvar arquivo enviado: {e}")
+
+# === INTERFACE PRINCIPAL DO STREAMLIT ===
+def main():
+    """Interface principal da aplicação"""
+    
+    # Título e descrição
+    st.title("📊 Upload Reports Consolidado")
+    st.markdown("**Sistema de consolidação de relatórios de vendas CTs**")
+    
+    # Sidebar com informações
+    with st.sidebar:
+        st.header("ℹ️ Informações")
+        st.markdown("""
+        **Como usar:**
+        1. Faça upload do arquivo Excel
+        2. Verifique o nome do responsável
+        3. Clique em "Processar Consolidação"
+        
+        **Requisitos do arquivo:**
+        - Formato: .xlsx
+        - Aba: "Vendas CTs"
+        - Coluna obrigatória: "DATA"
+        """)
+        
+        # Status de conexão
+        st.header("🔗 Status de Conexão")
+        token = obter_token()
+        if token:
+            st.success("✅ Conectado")
+        else:
+            st.error("❌ Falha na conexão")
+            st.stop()
+    
+    # Área principal
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.header("📁 Upload do Arquivo")
+        
+        # Upload do arquivo
+        arquivo_upload = st.file_uploader(
+            "Escolha o arquivo Excel",
+            type=['xlsx'],
+            help="Arquivo deve conter uma aba chamada 'Vendas CTs'"
+        )
+        
+        if arquivo_upload is not None:
+            try:
+                # Ler arquivo
+                with st.spinner("📖 Lendo arquivo..."):
+                    df = pd.read_excel(arquivo_upload, sheet_name="Vendas CTs")
+                
+                # Limpar nomes das colunas
+                df.columns = df.columns.str.strip().str.upper()
+                
+                st.success(f"✅ Arquivo carregado: {len(df)} linhas")
+                
+                # Mostrar preview dos dados
+                with st.expander("👀 Preview dos Dados"):
+                    st.dataframe(df.head(10), use_container_width=True)
+                
+                # Detectar responsável
+                responsavel_detectado, metodo = extrair_responsavel_da_planilha(df)
+                
+                if responsavel_detectado:
+                    st.info(f"🎯 Responsável detectado: **{responsavel_detectado}** ({metodo})")
+                    responsavel_input = st.text_input(
+                        "Nome do Responsável",
+                        value=responsavel_detectado,
+                        help="Confirme ou corrija o nome do responsável"
+                    )
+                else:
+                    st.warning("⚠️ Responsável não detectado automaticamente")
+                    responsavel_input = st.text_input(
+                        "Nome do Responsável",
+                        placeholder="Digite o nome completo do responsável",
+                        help="Campo obrigatório"
+                    )
+                
+                # Validação dos dados
+                if responsavel_input:
+                    erros, avisos, linhas_invalidas = validar_dados_enviados(df, responsavel_input)
+                    
+                    # Mostrar erros
+                    if erros:
+                        st.error("❌ **Erros encontrados:**")
+                        for erro in erros:
+                            st.error(erro)
+                    
+                    # Mostrar avisos
+                    if avisos:
+                        st.warning("⚠️ **Avisos:**")
+                        for aviso in avisos:
+                            st.warning(aviso)
+                    
+                    # Mostrar linhas inválidas se existirem
+                    if linhas_invalidas:
+                        with st.expander("📋 Detalhes das Linhas com Datas Inválidas"):
+                            df_invalidas = pd.DataFrame(linhas_invalidas)
+                            st.dataframe(df_invalidas, use_container_width=True, hide_index=True)
+                    
+                    # Botão de processamento
+                    if not erros:
+                        st.divider()
+                        
+                        col_btn1, col_btn2 = st.columns([1, 1])
+                        
+                        with col_btn1:
+                            if st.button("🚀 Processar Consolidação", type="primary", use_container_width=True):
+                                with st.spinner("🔄 Processando..."):
+                                    sucesso = processar_consolidacao(df, responsavel_input, token)
+                                    
+                                    if sucesso:
+                                        st.balloons()
+                        
+                        with col_btn2:
+                            if st.button("🔄 Recarregar Página", use_container_width=True):
+                                st.rerun()
+                    
+                    else:
+                        st.error("❌ Corrija os erros antes de prosseguir")
+                        
+            except Exception as e:
+                st.error(f"❌ Erro ao processar arquivo: {str(e)}")
+                if "Vendas CTs" in str(e):
+                    st.info("💡 Certifique-se de que o arquivo possui uma aba chamada 'Vendas CTs'")
+    
+    with col2:
+        st.header("📈 Estatísticas")
+        
+        if arquivo_upload is not None:
+            try:
+                # Mostrar estatísticas do arquivo
+                st.metric("📄 Total de Linhas", len(df))
+                st.metric("📊 Total de Colunas", len(df.columns))
+                
+                # Verificar se tem coluna DATA
+                if "DATA" in df.columns:
+                    df_temp = df.copy()
+                    df_temp["DATA"] = pd.to_datetime(df_temp["DATA"], errors="coerce")
+                    df_temp = df_temp.dropna(subset=["DATA"])
+                    
+                    if not df_temp.empty:
+                        data_min = df_temp["DATA"].min().strftime("%d/%m/%Y")
+                        data_max = df_temp["DATA"].max().strftime("%d/%m/%Y")
+                        st.metric("📅 Período", f"{data_min} - {data_max}")
+                        st.metric("✅ Datas Válidas", len(df_temp))
+                
+                # Mostrar colunas encontradas
+                with st.expander("📋 Colunas do Arquivo"):
+                    for col in df.columns:
+                        st.text(f"• {col}")
+                        
+            except:
+                pass
+        else:
+            st.info("📁 Faça upload de um arquivo para ver as estatísticas")
+
+# === EXECUTAR APLICAÇÃO ===
+if __name__ == "__main__":
+    main()
