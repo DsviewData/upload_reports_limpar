@@ -234,6 +234,13 @@ def validar_dados_enviados(df, responsavel):
     avisos = []
     linhas_invalidas_detalhes = []
     
+    # Colunas esperadas do sistema
+    COLUNAS_ESPERADAS = [
+        'GRUPO', 'CONCESSIONÁRIA', 'LOJA', 'MARCA', 'UF', 'RESPONSÁVEL', 
+        'CONSULTORES', 'DATA', 'TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 
+        'TMO - VERNIZ', 'CX EVAP', 'TMO - TOTAL'
+    ]
+    
     # Validar responsável
     if not responsavel or not responsavel.strip():
         erros.append("⚠️ O nome do responsável é obrigatório")
@@ -287,17 +294,36 @@ def validar_dados_enviados(df, responsavel):
                 avisos.append(f"⚠️ {duplicatas} linhas com datas duplicadas na planilha")
     
     # Validar colunas essenciais
-    colunas_essenciais = ['TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 'TMO - VERNIZ', 'CX EVAP']
-    colunas_faltantes = [col for col in colunas_essenciais if col not in df.columns]
+    colunas_faltantes = [col for col in COLUNAS_ESPERADAS if col not in df.columns]
+    colunas_importantes = ['GRUPO', 'CONCESSIONÁRIA', 'LOJA', 'MARCA', 'UF']
+    colunas_importantes_faltantes = [col for col in colunas_importantes if col not in df.columns]
+    
+    if colunas_importantes_faltantes:
+        avisos.append(f"⚠️ Colunas importantes não encontradas: {', '.join(colunas_importantes_faltantes)}")
     
     if colunas_faltantes:
-        avisos.append(f"⚠️ Colunas recomendadas não encontradas: {', '.join(colunas_faltantes)}")
+        avisos.append(f"📋 Colunas que serão criadas automaticamente: {', '.join(colunas_faltantes)}")
+    
+    # Validar colunas numéricas
+    colunas_numericas = ['TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 'TMO - VERNIZ', 'CX EVAP', 'TMO - TOTAL']
+    for col in colunas_numericas:
+        if col in df.columns:
+            valores_nao_numericos = pd.to_numeric(df[col], errors='coerce').isna().sum()
+            if valores_nao_numericos > 0:
+                avisos.append(f"⚠️ {valores_nao_numericos} valores não numéricos na coluna '{col}' serão convertidos para 0")
     
     return erros, avisos, linhas_invalidas_detalhes
 
 def processar_consolidacao(df_novo, responsavel, token):
     """Processa a consolidação dos dados - Comparação linha por linha por RESPONSÁVEL + DATA"""
     consolidado_nome = "Reports_Geral_Consolidado.xlsx"
+
+    # Definir colunas esperadas para comparação
+    COLUNAS_ESPERADAS = [
+        'GRUPO', 'CONCESSIONÁRIA', 'LOJA', 'MARCA', 'UF', 'RESPONSÁVEL', 
+        'CONSULTORES', 'DATA', 'TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 
+        'TMO - VERNIZ', 'CX EVAP', 'TMO - TOTAL'
+    ]
 
     # 1. Baixar arquivo consolidado existente
     url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{PASTA}/{consolidado_nome}:/content"
@@ -335,6 +361,26 @@ def processar_consolidacao(df_novo, responsavel, token):
     if linhas_invalidas > 0:
         st.info(f"🧹 {linhas_invalidas} linhas com datas inválidas foram removidas")
 
+    # Verificar se colunas esperadas existem na planilha enviada
+    colunas_faltantes = [col for col in COLUNAS_ESPERADAS if col not in df_novo.columns]
+    if colunas_faltantes:
+        st.warning(f"⚠️ Colunas não encontradas na planilha enviada: {', '.join(colunas_faltantes)}")
+        # Adicionar colunas faltantes com valores vazios
+        for col in colunas_faltantes:
+            df_novo[col] = None
+
+    # Calcular TMO - TOTAL se não existir
+    if 'TMO - TOTAL' not in df_novo.columns or df_novo['TMO - TOTAL'].isna().all():
+        colunas_tmo = ['TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 'TMO - VERNIZ']
+        colunas_tmo_existentes = [col for col in colunas_tmo if col in df_novo.columns]
+        
+        if colunas_tmo_existentes:
+            df_novo['TMO - TOTAL'] = 0
+            for col in colunas_tmo_existentes:
+                df_novo[col] = pd.to_numeric(df_novo[col], errors='coerce').fillna(0)
+                df_novo['TMO - TOTAL'] += df_novo[col]
+            st.info(f"✅ Coluna 'TMO - TOTAL' calculada automaticamente")
+
     # 3. Consolidação linha por linha
     registros_inseridos = 0
     registros_atualizados = 0
@@ -347,15 +393,10 @@ def processar_consolidacao(df_novo, responsavel, token):
             df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
             df_consolidado = df_consolidado.dropna(subset=["DATA"])
             
-            # Garantir que todas as colunas do novo estão no consolidado
-            for col in df_novo.columns:
+            # Garantir que todas as colunas esperadas existem no consolidado
+            for col in COLUNAS_ESPERADAS:
                 if col not in df_consolidado.columns:
                     df_consolidado[col] = None
-                    
-            # Garantir que todas as colunas do consolidado estão no novo
-            for col in df_consolidado.columns:
-                if col not in df_novo.columns:
-                    df_novo[col] = None
             
             # Processar cada linha do arquivo novo
             for idx, linha_nova in df_novo.iterrows():
@@ -372,13 +413,20 @@ def processar_consolidacao(df_novo, responsavel, token):
                 
                 if linhas_correspondentes.empty:
                     # Registro não existe - INSERIR
-                    nova_linha = pd.DataFrame([linha_nova])
+                    # Reorganizar linha com as colunas na ordem esperada
+                    linha_organizada = {}
+                    for col in COLUNAS_ESPERADAS:
+                        linha_organizada[col] = linha_nova.get(col, None)
+                    
+                    nova_linha = pd.DataFrame([linha_organizada])
                     df_consolidado = pd.concat([df_consolidado, nova_linha], ignore_index=True)
                     registros_inseridos += 1
+                    
                     detalhes_operacoes.append({
                         "Operação": "INSERIR",
                         "Data": data_nova.strftime("%d/%m/%Y"),
-                        "Responsável": responsavel_novo
+                        "Responsável": responsavel_novo,
+                        "Observação": "Novo registro"
                     })
                     
                 else:
@@ -386,16 +434,17 @@ def processar_consolidacao(df_novo, responsavel, token):
                     linha_existente = linhas_correspondentes.iloc[0]
                     index_existente = linhas_correspondentes.index[0]
                     
-                    # Comparar todas as colunas (exceto metadados)
-                    colunas_comparacao = [col for col in df_novo.columns 
-                                        if col not in ["ÚLTIMA_ATUALIZAÇÃO"]]
+                    # Comparar apenas as colunas esperadas (exceto DATA e RESPONSÁVEL que já foram usadas para busca)
+                    colunas_comparacao = [col for col in COLUNAS_ESPERADAS 
+                                        if col not in ["DATA", "RESPONSÁVEL"]]
                     
                     houve_alteracao = False
                     campos_alterados = []
+                    detalhes_alteracao = []
                     
                     for col in colunas_comparacao:
-                        valor_novo = linha_nova[col]
-                        valor_existente = linha_existente[col]
+                        valor_novo = linha_nova.get(col, None)
+                        valor_existente = linha_existente.get(col, None)
                         
                         # Normalizar valores para comparação
                         if pd.isna(valor_novo) and pd.isna(valor_existente):
@@ -403,23 +452,45 @@ def processar_consolidacao(df_novo, responsavel, token):
                         elif pd.isna(valor_novo) or pd.isna(valor_existente):
                             houve_alteracao = True
                             campos_alterados.append(col)
+                            detalhes_alteracao.append(f"{col}: '{valor_existente}' → '{valor_novo}'")
                         else:
-                            # Converter para string e comparar (para evitar problemas de tipo)
-                            if str(valor_novo).strip() != str(valor_existente).strip():
-                                houve_alteracao = True
-                                campos_alterados.append(col)
+                            # Para campos numéricos, converter para float para comparação
+                            if col in ['TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 'TMO - VERNIZ', 'CX EVAP', 'TMO - TOTAL']:
+                                try:
+                                    val_novo_num = float(pd.to_numeric(valor_novo, errors='coerce'))
+                                    val_exist_num = float(pd.to_numeric(valor_existente, errors='coerce'))
+                                    
+                                    # Comparar com tolerância para valores float
+                                    if abs(val_novo_num - val_exist_num) > 0.001:
+                                        houve_alteracao = True
+                                        campos_alterados.append(col)
+                                        detalhes_alteracao.append(f"{col}: {val_exist_num} → {val_novo_num}")
+                                except:
+                                    # Se não conseguir converter, comparar como string
+                                    if str(valor_novo).strip() != str(valor_existente).strip():
+                                        houve_alteracao = True
+                                        campos_alterados.append(col)
+                                        detalhes_alteracao.append(f"{col}: '{valor_existente}' → '{valor_novo}'")
+                            else:
+                                # Para campos de texto, comparar como string
+                                if str(valor_novo).strip().upper() != str(valor_existente).strip().upper():
+                                    houve_alteracao = True
+                                    campos_alterados.append(col)
+                                    detalhes_alteracao.append(f"{col}: '{valor_existente}' → '{valor_novo}'")
                     
                     if houve_alteracao:
                         # ATUALIZAR linha existente
-                        for col in colunas_comparacao:
-                            df_consolidado.loc[index_existente, col] = linha_nova[col]
+                        for col in COLUNAS_ESPERADAS:
+                            if col in linha_nova.index:
+                                df_consolidado.loc[index_existente, col] = linha_nova[col]
                         
                         registros_atualizados += 1
                         detalhes_operacoes.append({
                             "Operação": "ATUALIZAR",
                             "Data": data_nova.strftime("%d/%m/%Y"),
                             "Responsável": responsavel_novo,
-                            "Campos alterados": ", ".join(campos_alterados[:3]) + ("..." if len(campos_alterados) > 3 else "")
+                            "Observação": f"Campos alterados: {', '.join(campos_alterados[:3])}" + 
+                                        ("..." if len(campos_alterados) > 3 else "")
                         })
                     else:
                         # Sem alteração
@@ -427,18 +498,33 @@ def processar_consolidacao(df_novo, responsavel, token):
                         detalhes_operacoes.append({
                             "Operação": "SEM ALTERAÇÃO",
                             "Data": data_nova.strftime("%d/%m/%Y"),
-                            "Responsável": responsavel_novo
+                            "Responsável": responsavel_novo,
+                            "Observação": "Dados idênticos"
                         })
                         
             df_final = df_consolidado.copy()
             
         else:
             # Arquivo consolidado não existe - inserir todos os registros
-            df_final = df_novo.copy()
+            # Reorganizar com colunas na ordem esperada
+            df_organizado = pd.DataFrame()
+            for col in COLUNAS_ESPERADAS:
+                df_organizado[col] = df_novo.get(col, None)
+            
+            df_final = df_organizado.copy()
             registros_inseridos = len(df_novo)
             st.info("📂 Primeiro envio - criando arquivo consolidado")
 
-    # 4. Ordenar e finalizar
+    # 4. Reorganizar colunas na ordem esperada
+    colunas_finais = COLUNAS_ESPERADAS.copy()
+    # Adicionar colunas extras que possam existir
+    for col in df_final.columns:
+        if col not in colunas_finais:
+            colunas_finais.append(col)
+    
+    df_final = df_final.reindex(columns=colunas_finais)
+    
+    # 5. Ordenar e finalizar
     df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"], na_position='last').reset_index(drop=True)
     
     # Adicionar metadados de controle
@@ -450,10 +536,10 @@ def processar_consolidacao(df_novo, responsavel, token):
         df_final.to_excel(writer, index=False, sheet_name="Vendas CTs")
     buffer.seek(0)
 
-    # 5. Salvar cópia do arquivo enviado
+    # 6. Salvar cópia do arquivo enviado
     salvar_arquivo_enviado(df_novo, responsavel, token)
     
-    # 6. Upload do arquivo consolidado
+    # 7. Upload do arquivo consolidado
     with st.spinner("📤 Enviando arquivo consolidado..."):
         sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token)
 
@@ -656,7 +742,7 @@ def main():
         # Resumo de totais por produto
         st.subheader("💰 Resumo de Totais por Produto")
         
-        # Lista das colunas de produtos corrigidas
+        # Lista das colunas de produtos corretas
         colunas_produtos = ['TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 'TMO - VERNIZ', 'CX EVAP']
         
         # Encontrar colunas que existem no DataFrame
@@ -672,6 +758,87 @@ def main():
                 valores_numericos = pd.to_numeric(df[coluna], errors='coerce').fillna(0)
                 total = int(valores_numericos.sum())  # Converter para inteiro
                 totais[coluna] = total
+                total_geral += total
+            
+            # Calcular TMO - TOTAL
+            colunas_tmo = [col for col in colunas_encontradas if col.startswith('TMO -')]
+            if colunas_tmo:
+                tmo_total = sum(totais[col] for col in colunas_tmo)
+                totais['TMO - TOTAL'] = tmo_total
+            
+            # Exibir métricas em colunas
+            produtos_para_exibir = [col for col in colunas_produtos if col in totais]
+            if 'TMO - TOTAL' in totais:
+                produtos_para_exibir.append('TMO - TOTAL')
+            
+            num_colunas = len(produtos_para_exibir)
+            cols = st.columns(num_colunas)
+            
+            # Mostrar totais por produto
+            for i, coluna in enumerate(produtos_para_exibir):
+                with cols[i]:
+                    total = totais[coluna]
+                    # Formatar número com separadores de milhares (formato inteiro)
+                    total_formatado = f"{total:,}".replace(',', '.')
+                    
+                    # Definir emoji baseado no produto
+                    if 'DUTO' in coluna:
+                        emoji = "🔧"
+                    elif 'FREIO' in coluna:
+                        emoji = "🚗"
+                    elif 'SANIT' in coluna:
+                        emoji = "🧽"
+                    elif 'VERNIZ' in coluna:
+                        emoji = "🎨"
+                    elif 'EVAP' in coluna:
+                        emoji = "📦"
+                    elif 'TOTAL' in coluna:
+                        emoji = "💰"
+                    else:
+                        emoji = "📊"
+                    
+                    # Nome simplificado para exibição
+                    nome_display = coluna.replace('TMO - ', '').title()
+                    
+                    st.metric(f"{emoji} {nome_display}", total_formatado)
+            
+            # Tabela resumo adicional
+            with st.expander("📋 Detalhes dos Totais"):
+                resumo_data = []
+                for coluna in produtos_para_exibir:
+                    total = totais[coluna]
+                    nome_produto = coluna.replace('TMO - ', '').title()
+                    resumo_data.append({
+                        'Produto': nome_produto,
+                        'Total': f"{total:,}".replace(',', '.'),
+                        'Registros': (pd.to_numeric(df[coluna], errors='coerce') > 0).sum() if coluna in df.columns else 0
+                    })
+                
+                df_resumo = pd.DataFrame(resumo_data)
+                st.dataframe(df_resumo, use_container_width=True, hide_index=True)
+                
+                # Mostrar informação sobre TMO - TOTAL
+                if 'TMO - TOTAL' in df.columns:
+                    valores_total_calculado = sum(totais.get(col, 0) for col in colunas_tmo)
+                    valores_total_planilha = int(pd.to_numeric(df['TMO - TOTAL'], errors='coerce').fillna(0).sum())
+                    
+                    if valores_total_calculado != valores_total_planilha:
+                        st.warning(f"⚠️ Divergência no TMO - TOTAL: Calculado = {valores_total_calculado:,}, Planilha = {valores_total_planilha:,}")
+                        st.info("💡 O sistema usará o valor calculado automaticamente")
+                    else:
+                        st.success("✅ TMO - TOTAL está correto")
+                        
+        else:
+            st.warning("⚠️ Nenhuma coluna de produtos encontrada")
+            
+            # Mostrar colunas disponíveis para ajudar o usuário
+            with st.expander("🔍 Ver colunas disponíveis"):
+                colunas_disponiveis = [col for col in df.columns if col not in ['DATA', 'RESPONSÁVEL']]
+                st.write("**Colunas encontradas na planilha:**")
+                for col in colunas_disponiveis:
+                    st.write(f"• {col}")
+                st.info("💡 **Dica:** Use exatamente estes nomes de colunas:")
+                st.code("GRUPO, CONCESSIONÁRIA, LOJA, MARCA, UF, RESPONSÁVEL, CONSULTORES, DATA, TMO - DUTO, TMO - FREIO, TMO - SANIT, TMO - VERNIZ, CX EVAP, TMO - TOTAL")ais[coluna] = total
                 total_geral += total
             
             # Calcular TMO - Total se houver colunas TMO
@@ -869,7 +1036,8 @@ def main():
         ✅ **Estrutura da planilha:**
         - Aba chamada **'Vendas CTs'**
         - Coluna **'DATA'** com datas válidas
-        - Colunas de produtos: **TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP**
+        - Colunas obrigatórias: **GRUPO, CONCESSIONÁRIA, LOJA, MARCA, UF, RESPONSÁVEL, CONSULTORES**
+        - Colunas de produtos: **TMO - DUTO, TMO - FREIO, TMO - SANIT, TMO - VERNIZ, CX EVAP, TMO - TOTAL**
         
         ✅ **Responsável:**
         - O sistema tentará detectar automaticamente o responsável da planilha
@@ -881,19 +1049,42 @@ def main():
         - Evite células vazias na coluna DATA
         - Verifique se não há datas futuras por engano
         
-        ✅ **Dados:**
-        - Valores numéricos nas colunas de produtos
+        ✅ **Dados numéricos:**
+        - Valores numéricos nas colunas TMO e CX EVAP
         - Evite caracteres especiais desnecessários
-        - Mantenha consistência nos nomes dos produtos
+        - TMO - TOTAL será calculado automaticamente se não informado
+        
+        ### 🎯 **Colunas esperadas (ordem exata):**
+        
+        ```
+        1.  GRUPO
+        2.  CONCESSIONÁRIA  
+        3.  LOJA
+        4.  MARCA
+        5.  UF
+        6.  RESPONSÁVEL
+        7.  CONSULTORES
+        8.  DATA
+        9.  TMO - DUTO
+        10. TMO - FREIO
+        11. TMO - SANIT
+        12. TMO - VERNIZ
+        13. CX EVAP
+        14. TMO - TOTAL (será calculado automaticamente)
+        ```
         
         ### 🔄 **Como funciona a consolidação:**
         
         1. **Detecção automática:** O sistema tenta encontrar o responsável na planilha
         2. **Validação:** Verifica estrutura, datas e dados
-        3. **Substituição inteligente:** Remove dados antigos do mesmo responsável no mesmo período
+        3. **Comparação linha por linha:** Para cada registro da planilha enviada:
+           - Busca no consolidado por **RESPONSÁVEL + DATA**
+           - Se não existir: **INSERE** novo registro
+           - Se existir: **COMPARA** todos os campos
+             - Com alteração: **ATUALIZA** o registro
+             - Sem alteração: **MANTÉM** inalterado
         4. **Backup automático:** Cria backup do arquivo anterior
-        5. **Consolidação:** Adiciona novos dados ao arquivo principal
-        6. **Cópia de segurança:** Salva uma cópia do arquivo enviado
+        5. **Cópia de segurança:** Salva uma cópia do arquivo enviado
         
         ### 🆘 **Problemas comuns:**
         
@@ -903,11 +1094,16 @@ def main():
         
         **❌ "Responsável não detectado"**
         - Digite manualmente o nome do responsável
-        - Na próxima versão, inclua uma coluna 'RESPONSÁVEL' na planilha
+        - Inclua uma coluna 'RESPONSÁVEL' na planilha para detecção automática
         
-        **❌ "Colunas de produtos não encontradas"**
-        - Renomeie as colunas conforme indicado acima
-        - Mantenha a grafia exata, incluindo espaços e hífens
+        **❌ "Colunas não encontradas"**
+        - Use exatamente os nomes das colunas listados acima
+        - Mantenha a grafia exata, incluindo espaços, hífens e acentos
+        - Colunas faltantes serão criadas automaticamente com valores vazios
+        
+        **⚠️ "Divergência no TMO - TOTAL"**
+        - O sistema recalcula automaticamente TMO - TOTAL
+        - Soma: TMO - DUTO + TMO - FREIO + TMO - SANIT + TMO - VERNIZ
         """)
 
     # Rodapé com informações
@@ -915,9 +1111,9 @@ def main():
     st.markdown(
         """
         <div style="text-align: center; color: #666; font-size: 0.8em;">
-            <strong>DSView BI - Sistema de Consolidação de Relatórios v2.0</strong><br>
-            🔄 Detecção automática de responsável | 🛡️ Validações aprimoradas | 📊 Análise de qualidade<br>
-            💾 Backup automático | 🔍 Verificação de conflitos | 📋 Logs detalhados
+            <strong>DSView BI - Sistema de Consolidação de Relatórios v2.1</strong><br>
+            🎯 Consolidação por RESPONSÁVEL + DATA | 🔄 Comparação linha por linha | 📊 Cálculo automático de totais<br>
+            💾 Backup automático | 🔍 Detecção de alterações | 📋 Logs detalhados de operações
         </div>
         """,
         unsafe_allow_html=True
