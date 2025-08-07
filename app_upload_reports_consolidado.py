@@ -6,6 +6,7 @@ from io import BytesIO
 from msal import ConfidentialClientApplication
 import unicodedata
 import logging
+import re
 
 # Configurar logging para debug
 logging.basicConfig(level=logging.INFO)
@@ -50,6 +51,82 @@ def obter_token():
         return None
 
 # === FUNÇÕES AUXILIARES ===
+def extrair_responsavel_da_planilha(df):
+    """Extrai o nome do responsável da planilha usando diferentes estratégias"""
+    responsavel_encontrado = None
+    metodo_deteccao = None
+    
+    try:
+        # Estratégia 1: Procurar coluna 'RESPONSÁVEL' ou 'RESPONSAVEL'
+        colunas_responsavel = [col for col in df.columns if 
+                             any(term in col.upper() for term in ['RESPONSÁVEL', 'RESPONSAVEL', 'RESP'])]
+        
+        if colunas_responsavel:
+            coluna = colunas_responsavel[0]
+            valores_unicos = df[coluna].dropna().unique()
+            if len(valores_unicos) > 0:
+                # Pegar o valor mais comum
+                responsavel_encontrado = df[coluna].value_counts().index[0]
+                metodo_deteccao = f"Coluna '{coluna}'"
+        
+        # Estratégia 2: Procurar em células específicas (primeira linha, primeiras colunas)
+        if not responsavel_encontrado:
+            # Verificar primeira linha em busca de padrões como "Responsável:", "Nome:", etc.
+            primeira_linha = df.iloc[0] if not df.empty else pd.Series()
+            for col in df.columns[:5]:  # Verificar apenas primeiras 5 colunas
+                valor = str(primeira_linha.get(col, '')).strip()
+                if valor and len(valor) > 2 and any(char.isalpha() for char in valor):
+                    # Verificar se parece com um nome (tem espaço e letras)
+                    if ' ' in valor and len(valor.split()) >= 2:
+                        responsavel_encontrado = valor
+                        metodo_deteccao = f"Primeira linha, coluna '{col}'"
+                        break
+        
+        # Estratégia 3: Procurar em células que contenham padrões de nome
+        if not responsavel_encontrado:
+            for idx, row in df.head(10).iterrows():  # Verificar apenas primeiras 10 linhas
+                for col in df.columns:
+                    valor = str(row[col]).strip()
+                    if (valor and len(valor) > 2 and 
+                        ' ' in valor and 
+                        len(valor.split()) >= 2 and
+                        not valor.replace(' ', '').isdigit() and  # Não é apenas números
+                        not '/' in valor and  # Não é data
+                        not valor.upper() in ['NAN', 'NULL', 'NONE']):
+                        
+                        # Verificar se parece com nome (mais de 50% letras)
+                        letras = sum(c.isalpha() for c in valor)
+                        if letras / len(valor) > 0.5:
+                            responsavel_encontrado = valor
+                            metodo_deteccao = f"Linha {idx+1}, coluna '{col}'"
+                            break
+                if responsavel_encontrado:
+                    break
+        
+        # Estratégia 4: Procurar em metadados do Excel (se disponível)
+        # Esta seria implementada com openpyxl se necessário
+        
+        # Limpar e validar o nome encontrado
+        if responsavel_encontrado:
+            # Remover caracteres especiais no início/fim
+            responsavel_encontrado = re.sub(r'^[^\w\s]+|[^\w\s]+$', '', responsavel_encontrado).strip()
+            
+            # Capitalizar adequadamente
+            responsavel_encontrado = ' '.join(word.capitalize() for word in responsavel_encontrado.split())
+            
+            # Verificar se o nome é válido (pelo menos 2 palavras, cada uma com pelo menos 2 caracteres)
+            palavras = responsavel_encontrado.split()
+            if len(palavras) < 2 or any(len(palavra) < 2 for palavra in palavras):
+                responsavel_encontrado = None
+                metodo_deteccao = None
+    
+    except Exception as e:
+        logger.error(f"Erro ao extrair responsável: {e}")
+        responsavel_encontrado = None
+        metodo_deteccao = None
+    
+    return responsavel_encontrado, metodo_deteccao
+
 def criar_pasta_se_nao_existir(caminho_pasta, token):
     """Cria pasta no OneDrive se não existir"""
     try:
@@ -162,6 +239,8 @@ def validar_dados_enviados(df, responsavel):
         erros.append("⚠️ O nome do responsável é obrigatório")
     elif len(responsavel.strip()) < 2:
         erros.append("⚠️ O nome do responsável deve ter pelo menos 2 caracteres")
+    elif len(responsavel.strip().split()) < 2:
+        avisos.append("⚠️ Recomenda-se informar nome e sobrenome do responsável")
     
     # Validar se DataFrame não está vazio
     if df.empty:
@@ -207,10 +286,17 @@ def validar_dados_enviados(df, responsavel):
             if duplicatas > 0:
                 avisos.append(f"⚠️ {duplicatas} linhas com datas duplicadas na planilha")
     
+    # Validar colunas essenciais
+    colunas_essenciais = ['TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 'TMO - VERNIZ', 'CX EVAP']
+    colunas_faltantes = [col for col in colunas_essenciais if col not in df.columns]
+    
+    if colunas_faltantes:
+        avisos.append(f"⚠️ Colunas recomendadas não encontradas: {', '.join(colunas_faltantes)}")
+    
     return erros, avisos, linhas_invalidas_detalhes
 
 def processar_consolidacao(df_novo, responsavel, token):
-    """Processa a consolidação dos dados - Atualiza ou insere linha por linha"""
+    """Processa a consolidação dos dados - Versão melhorada com validações adicionais"""
     consolidado_nome = "Reports_Geral_Consolidado.xlsx"
 
     # 1. Baixar arquivo consolidado existente
@@ -249,64 +335,61 @@ def processar_consolidacao(df_novo, responsavel, token):
     if linhas_invalidas > 0:
         st.info(f"🧹 {linhas_invalidas} linhas com datas inválidas foram removidas")
 
-    # 3. Consolidar linha por linha (comparação completa)
+    # 3. Consolidar com lógica melhorada
     registros_atualizados = 0
     registros_inseridos = 0
     registros_ignorados = 0
+    registros_duplicados_removidos = 0
     
     with st.spinner("🔄 Processando consolidação..."):
         if not df_consolidado.empty:
             df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
             df_consolidado = df_consolidado.dropna(subset=["DATA"])
-            colunas = df_novo.columns.tolist()
-
-            # Garantir que as colunas existem no consolidado
-            for col in colunas:
+            
+            # Garantir que todas as colunas do novo estão no consolidado
+            for col in df_novo.columns:
                 if col not in df_consolidado.columns:
                     df_consolidado[col] = None
 
-            for idx, row_nova in df_novo.iterrows():
-                # Buscar registros com mesma data e responsável
-                cond = (
-                    (df_consolidado["DATA"].dt.normalize() == row_nova["DATA"].normalize()) &
-                    (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == row_nova["RESPONSÁVEL"].strip().upper())
-                )
-                possiveis = df_consolidado[cond]
-
-                # Verificar se já existe linha idêntica
-                linha_identica_encontrada = False
+            # Remover registros antigos do mesmo responsável no mesmo período
+            if "RESPONSÁVEL" in df_consolidado.columns:
+                data_min_nova = df_novo["DATA"].min().normalize()
+                data_max_nova = df_novo["DATA"].max().normalize()
                 
-                if not possiveis.empty:
-                    # Comparar valores das colunas principais (exceto metadados)
-                    colunas_comparacao = [col for col in colunas if col not in ["RESPONSÁVEL"]]
-                    
-                    for _, row_existente in possiveis.iterrows():
-                        if all(pd.isna(row_nova[col]) and pd.isna(row_existente[col]) or 
-                               str(row_nova[col]).strip() == str(row_existente[col]).strip() 
-                               for col in colunas_comparacao if col in row_existente.index):
-                            registros_ignorados += 1
-                            linha_identica_encontrada = True
-                            break
-                    
-                    # Se não encontrou linha idêntica, atualizar primeiro registro
-                    if not linha_identica_encontrada:
-                        index = possiveis.index[0]
-                        df_consolidado.loc[index, colunas] = row_nova.values
-                        registros_atualizados += 1
-                else:
-                    # Inserir novo registro
-                    new_row = pd.DataFrame([row_nova])
-                    df_consolidado = pd.concat([df_consolidado, new_row], ignore_index=True)
-                    registros_inseridos += 1
+                mask_mesmo_responsavel = (
+                    (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == responsavel.strip().upper()) &
+                    (df_consolidado["DATA"].dt.normalize() >= data_min_nova) &
+                    (df_consolidado["DATA"].dt.normalize() <= data_max_nova)
+                )
+                
+                registros_removidos = mask_mesmo_responsavel.sum()
+                if registros_removidos > 0:
+                    df_consolidado = df_consolidado[~mask_mesmo_responsavel]
+                    st.info(f"🔄 Removidos {registros_removidos} registros antigos do mesmo responsável no período")
 
-            df_final = df_consolidado.copy()
+            # Adicionar novos registros
+            df_final = pd.concat([df_consolidado, df_novo], ignore_index=True)
+            registros_inseridos = len(df_novo)
+            
         else:
             df_final = df_novo.copy()
             registros_inseridos = len(df_novo)
             st.info("📂 Primeiro envio - criando arquivo consolidado")
 
-    # 4. Ordenar e salvar
+        # Remover duplicatas exatas (mantendo última ocorrência)
+        colunas_para_duplicata = ["DATA", "RESPONSÁVEL"]
+        colunas_existentes = [col for col in colunas_para_duplicata if col in df_final.columns]
+        
+        if colunas_existentes:
+            duplicatas_antes = len(df_final)
+            df_final = df_final.drop_duplicates(subset=colunas_existentes, keep='last')
+            registros_duplicados_removidos = duplicatas_antes - len(df_final)
+
+    # 4. Ordenar e finalizar
     df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"], na_position='last').reset_index(drop=True)
+    
+    # Adicionar metadados de controle
+    df_final["ÚLTIMA_ATUALIZAÇÃO"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     # Salvar em buffer
     buffer = BytesIO()
@@ -327,13 +410,13 @@ def processar_consolidacao(df_novo, responsavel, token):
         # Métricas de resultado
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("📊 Total de registros", len(df_final))
+            st.metric("📊 Total final", len(df_final))
         with col2:
             st.metric("➕ Inseridos", registros_inseridos)
         with col3:
             st.metric("🔁 Atualizados", registros_atualizados)
         with col4:
-            st.metric("⏭️ Ignorados", registros_ignorados)
+            st.metric("🗑️ Duplicatas removidas", registros_duplicados_removidos)
         
         # Informações do período
         if not df_novo.empty:
@@ -419,16 +502,11 @@ def main():
         help="Formatos aceitos: .xlsx, .xls"
     )
 
-    # Campo obrigatório para responsável
-    responsavel = st.text_input(
-        "Digite seu nome (responsável): *", 
-        placeholder="Ex: João Silva",
-        help="Este campo é obrigatório",
-        max_chars=100
-    )
-
     # Processar arquivo carregado
     df = None
+    responsavel_auto = None
+    metodo_deteccao = None
+    
     if uploaded_file:
         try:
             # Detectar tipo de arquivo
@@ -465,11 +543,38 @@ def main():
                 df = pd.read_excel(uploaded_file, sheet_name=sheet)
                 df.columns = df.columns.str.strip().str.upper()
                 
+                # Tentar extrair responsável automaticamente
+                responsavel_auto, metodo_deteccao = extrair_responsavel_da_planilha(df)
+                
             st.success(f"✅ Arquivo carregado: {uploaded_file.name}")
+            
+            # Mostrar informação sobre detecção automática do responsável
+            if responsavel_auto:
+                st.success(f"🎯 **Responsável detectado automaticamente:** {responsavel_auto}")
+                st.info(f"📍 **Método de detecção:** {metodo_deteccao}")
+            else:
+                st.warning("⚠️ Não foi possível detectar automaticamente o responsável. Digite manualmente abaixo.")
             
         except Exception as e:
             st.error(f"❌ Erro ao ler o Excel: {e}")
             logger.error(f"Erro ao ler Excel: {e}")
+
+    # Campo para responsável (preenchido automaticamente se detectado)
+    if 'responsavel_auto' not in st.session_state:
+        st.session_state.responsavel_auto = ""
+    
+    # Atualizar o valor automático se foi detectado
+    if responsavel_auto and st.session_state.responsavel_auto != responsavel_auto:
+        st.session_state.responsavel_auto = responsavel_auto
+
+    # Campo obrigatório para responsável
+    responsavel = st.text_input(
+        "Digite seu nome (responsável): *", 
+        value=st.session_state.responsavel_auto,
+        placeholder="Ex: João Silva",
+        help="Este campo é obrigatório. O sistema tentará detectar automaticamente da planilha.",
+        max_chars=100
+    )
 
     # Mostrar prévia e validações
     if df is not None:
@@ -577,14 +682,45 @@ def main():
                     st.write(f"• {col}")
                 st.info("💡 **Dica:** Renomeie as colunas na sua planilha para: TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP")
 
-        # Verificar colunas com valores nulos
-        colunas_nulas = df.columns[df.isnull().any()].tolist()
-        if colunas_nulas:
-            st.warning(f"⚠️ Colunas com valores nulos: {', '.join(colunas_nulas[:5])}")
-            if len(colunas_nulas) > 5:
-                st.warning(f"... e mais {len(colunas_nulas) - 5} colunas")
-        else:
-            st.success("✅ Nenhuma coluna com valores nulos.")
+        # Análise de qualidade dos dados
+        st.subheader("🔍 Análise de Qualidade dos Dados")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Verificar colunas com valores nulos
+            colunas_nulas = df.columns[df.isnull().any()].tolist()
+            if colunas_nulas:
+                st.warning(f"⚠️ Colunas com valores nulos: {len(colunas_nulas)}")
+                with st.expander("Ver detalhes"):
+                    for col in colunas_nulas[:10]:  # Mostrar apenas as primeiras 10
+                        nulos = df[col].isnull().sum()
+                        percentual = (nulos / len(df)) * 100
+                        st.write(f"• **{col}**: {nulos} nulos ({percentual:.1f}%)")
+                    if len(colunas_nulas) > 10:
+                        st.write(f"... e mais {len(colunas_nulas) - 10} colunas")
+            else:
+                st.success("✅ Nenhuma coluna com valores nulos")
+        
+        with col2:
+            # Verificar período dos dados
+            if "DATA" in df.columns:
+                datas_validas = pd.to_datetime(df["DATA"], errors="coerce")
+                datas_validas = datas_validas.dropna()
+                
+                if not datas_validas.empty:
+                    data_min = datas_validas.min()
+                    data_max = datas_validas.max()
+                    dias_periodo = (data_max - data_min).days + 1
+                    
+                    st.info(f"📅 **Período:** {data_min.strftime('%d/%m/%Y')} a {data_max.strftime('%d/%m/%Y')}")
+                    st.info(f"📊 **Duração:** {dias_periodo} dias")
+                    
+                    # Verificar se há dados muito antigos ou muito futuros
+                    hoje = datetime.now()
+                    if data_max > hoje:
+                        st.warning("⚠️ Há datas futuras na planilha")
+                    if data_min < (hoje - pd.Timedelta(days=365)):
+                        st.warning("⚠️ Há datas muito antigas (mais de 1 ano)")
 
         # Validações antes do envio
         st.subheader("🔍 Validações")
@@ -620,32 +756,109 @@ def main():
             else:
                 st.warning("⚠️ Dados válidos serão consolidados. Corrija as datas inválidas para incluir todas as linhas.")
 
-        # Botão de envio
-        col1, col2 = st.columns([1, 4])
+        # Verificar se há conflitos potenciais
+        if not df.empty and "DATA" in df.columns and responsavel:
+            st.subheader("⚠️ Verificação de Conflitos")
+            
+            datas_validas = pd.to_datetime(df["DATA"], errors="coerce").dropna()
+            if not datas_validas.empty:
+                data_min = datas_validas.min()
+                data_max = datas_validas.max()
+                
+                st.info(f"📋 **Resumo do envio:**")
+                st.info(f"• **Responsável:** {responsavel}")
+                st.info(f"• **Período:** {data_min.strftime('%d/%m/%Y')} até {data_max.strftime('%d/%m/%Y')}")
+                st.info(f"• **Total de registros válidos:** {len(datas_validas)}")
+                
+                st.warning("⚠️ **IMPORTANTE:** Se você já enviou dados para este período, eles serão substituídos pelos novos dados.")
+
+        # Botões de ação
+        st.subheader("🚀 Ações")
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
         with col1:
             if st.button("📧 Consolidar Dados", type="primary", disabled=bool(erros)):
                 if erros:
                     st.error("❌ Corrija os erros acima antes de prosseguir")
                 else:
-                    sucesso = processar_consolidacao(df, responsavel, token)
-                    if sucesso:
-                        st.balloons()
+                    with st.spinner("🔄 Processando consolidação..."):
+                        sucesso = processar_consolidacao(df, responsavel, token)
+                        if sucesso:
+                            st.balloons()
+                            st.success("🎉 Dados consolidados com sucesso!")
+                            
+                            # Limpar o cache do responsável automático
+                            if 'responsavel_auto' in st.session_state:
+                                del st.session_state.responsavel_auto
                         
         with col2:
-            if st.button("🔄 Limpar", type="secondary"):
+            if st.button("🔄 Limpar Tudo", type="secondary"):
+                # Limpar session state
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
                 st.rerun()
+        
+        with col3:
+            if st.button("📊 Ver Consolidado", type="secondary"):
+                st.info("🔧 Funcionalidade em desenvolvimento - Em breve você poderá visualizar o arquivo consolidado")
+
+    # Instruções e dicas
+    with st.expander("📚 Instruções e Dicas"):
+        st.markdown("""
+        ### 📋 **Checklist para envio:**
+        
+        ✅ **Estrutura da planilha:**
+        - Aba chamada **'Vendas CTs'**
+        - Coluna **'DATA'** com datas válidas
+        - Colunas de produtos: **TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP**
+        
+        ✅ **Responsável:**
+        - O sistema tentará detectar automaticamente o responsável da planilha
+        - Se não detectar, digite seu nome completo
+        - Use sempre o mesmo nome para manter consistência
+        
+        ✅ **Datas:**
+        - Use formato de data válido (dd/mm/aaaa ou mm/dd/aaaa)
+        - Evite células vazias na coluna DATA
+        - Verifique se não há datas futuras por engano
+        
+        ✅ **Dados:**
+        - Valores numéricos nas colunas de produtos
+        - Evite caracteres especiais desnecessários
+        - Mantenha consistência nos nomes dos produtos
+        
+        ### 🔄 **Como funciona a consolidação:**
+        
+        1. **Detecção automática:** O sistema tenta encontrar o responsável na planilha
+        2. **Validação:** Verifica estrutura, datas e dados
+        3. **Substituição inteligente:** Remove dados antigos do mesmo responsável no mesmo período
+        4. **Backup automático:** Cria backup do arquivo anterior
+        5. **Consolidação:** Adiciona novos dados ao arquivo principal
+        6. **Cópia de segurança:** Salva uma cópia do arquivo enviado
+        
+        ### 🆘 **Problemas comuns:**
+        
+        **❌ "Nenhuma data válida encontrada"**
+        - Verifique se a coluna se chama exatamente 'DATA'
+        - Confirme se as datas estão em formato válido
+        
+        **❌ "Responsável não detectado"**
+        - Digite manualmente o nome do responsável
+        - Na próxima versão, inclua uma coluna 'RESPONSÁVEL' na planilha
+        
+        **❌ "Colunas de produtos não encontradas"**
+        - Renomeie as colunas conforme indicado acima
+        - Mantenha a grafia exata, incluindo espaços e hífens
+        """)
 
     # Rodapé com informações
     st.divider()
     st.markdown(
         """
         <div style="text-align: center; color: #666; font-size: 0.8em;">
-            DSView BI - Sistema de Consolidação de Relatórios<br>
-            ⚠️ Certifique-se de que sua planilha contenha:<br>
-            • Uma aba chamada <strong>'Vendas CTs'</strong><br>
-            • Uma coluna <strong>'DATA'</strong><br>
-            • Colunas: <strong>TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP</strong><br>
-            • Informe o nome do <strong>responsável</strong>
+            <strong>DSView BI - Sistema de Consolidação de Relatórios v2.0</strong><br>
+            🔄 Detecção automática de responsável | 🛡️ Validações aprimoradas | 📊 Análise de qualidade<br>
+            💾 Backup automático | 🔍 Verificação de conflitos | 📋 Logs detalhados
         </div>
         """,
         unsafe_allow_html=True
