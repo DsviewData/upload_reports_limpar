@@ -448,8 +448,10 @@ def processar_consolidacao(df_novo, nome_arquivo, token):
         df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
         df_consolidado = df_consolidado.dropna(subset=["DATA"])
         
-        # Verificar conflitos
-        conflitos = []
+        # Verificar registros existentes e novos - análise simplificada
+        registros_para_consolidar = 0  # Novos registros que serão inseridos
+        registros_para_alterar = 0     # Registros existentes que serão substituídos
+        
         for responsavel in responsaveis_no_envio:
             datas_envio = df_novo[df_novo["RESPONSÁVEL"] == responsavel]["DATA"].dt.date.unique()
             
@@ -459,39 +461,46 @@ def processar_consolidacao(df_novo, nome_arquivo, token):
                     (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == str(responsavel).strip().upper())
                 )
                 
+                registros_envio = len(df_novo[
+                    (df_novo["RESPONSÁVEL"] == responsavel) & 
+                    (df_novo["DATA"].dt.date == data)
+                ])
+                
                 if mask_conflito.any():
-                    num_existentes = mask_conflito.sum()
-                    num_novos = len(df_novo[
-                        (df_novo["RESPONSÁVEL"] == responsavel) & 
-                        (df_novo["DATA"].dt.date == data)
-                    ])
-                    
-                    conflitos.append({
-                        "Responsável": responsavel,
-                        "Data": data.strftime("%d/%m/%Y"),
-                        "Existentes": num_existentes,
-                        "Novos": num_novos
-                    })
+                    # JÁ EXISTE - será alterado/substituído
+                    registros_para_alterar += registros_envio
+                else:
+                    # NÃO EXISTE - será consolidado/inserido
+                    registros_para_consolidar += registros_envio
         
-        # Mostrar conflitos se existirem
-        if conflitos:
-            st.warning("⚠️ **ATENÇÃO: Os seguintes dados serão SUBSTITUÍDOS:**")
+        # Mostrar informações simplificadas
+        if registros_para_consolidar > 0 and registros_para_alterar == 0:
+            # Apenas inserções
+            st.success(f"✅ **{registros_para_consolidar} registro(s) serão CONSOLIDADOS** (dados novos)")
+            st.info("ℹ️ Nenhum registro existente será alterado")
             
-            df_conflitos = pd.DataFrame(conflitos)
-            st.dataframe(df_conflitos, use_container_width=True, hide_index=True)
+        elif registros_para_alterar > 0 and registros_para_consolidar == 0:
+            # Apenas substituições
+            st.warning(f"🔄 **{registros_para_alterar} registro(s) serão ALTERADOS** (substituindo dados existentes)")
+            st.info("ℹ️ Nenhum registro novo será adicionado")
             
-            total_substituicoes = sum(c["Existentes"] for c in conflitos)
-            st.warning(f"📝 **{total_substituicoes} registro(s) existente(s) serão removidos e substituídos**")
-            
-            # Opção de confirmação
-            confirmacao = st.checkbox(
-                "✅ Confirmo que desejo substituir os dados existentes pelos novos dados",
-                help="Esta ação não pode ser desfeita. Os dados antigos serão movidos para backup."
-            )
-            
-            if not confirmacao:
-                st.info("⏸️ Marque a confirmação acima para prosseguir com a consolidação")
-                return False
+        elif registros_para_consolidar > 0 and registros_para_alterar > 0:
+            # Misto: inserções + substituições
+            col1, col2 = st.columns(2)
+            with col1:
+                st.success(f"✅ **{registros_para_consolidar} registro(s) serão CONSOLIDADOS**")
+                st.caption("(dados completamente novos)")
+            with col2:
+                st.warning(f"🔄 **{registros_para_alterar} registro(s) serão ALTERADOS**")
+                st.caption("(substituindo dados existentes)")
+        
+        else:
+            # Caso improvável
+            st.error("❌ Nenhum registro válido encontrado para processar")
+            return False
+    else:
+        # Arquivo consolidado não existe - primeira vez
+        st.success(f"✅ **{len(df_novo)} registro(s) serão CONSOLIDADOS** (primeira consolidação)")
 
     # 3. Processar consolidação com nova lógica
     with st.spinner("🔄 Processando consolidação (nova lógica)..."):
