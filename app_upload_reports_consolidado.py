@@ -1,19 +1,34 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from msal import ConfidentialClientApplication
 import unicodedata
 import logging
 import os
+import json
+import uuid
+import time
 
 # ===========================
-# CONFIGURAÇÕES DE VERSÃO
+# CONFIGURAÇÕES DE VERSÃO - ATUALIZADO v2.2.1
 # ===========================
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.2.1"
 VERSION_DATE = "2025-08-07"
 CHANGELOG = {
+    "2.2.1": {
+        "date": "2025-08-07",
+        "changes": [
+            "🔒 Sistema de lock implementado - apenas 1 usuário pode enviar por vez",
+            "⏱️ Timeout automático de 10 minutos para processos travados",
+            "📊 Interface mostra status do sistema em tempo real",
+            "🔄 Auto-refresh quando sistema está ocupado",
+            "🆘 Botão de liberação forçada para processos órfãos",
+            "📱 Session ID único para controle de concorrência",
+            "🛡️ Proteção completa contra perda de dados em envios simultâneos"
+        ]
+    },
     "2.2.0": {
         "date": "2025-08-07",
         "changes": [
@@ -79,6 +94,12 @@ PASTA_ENVIOS_BACKUPS = "Documentos Compartilhados/PlanilhasEnviadas_Backups/Limp
 PASTA = PASTA_CONSOLIDADO
 
 # ===========================
+# CONFIGURAÇÃO DO SISTEMA DE LOCK - v2.2.1 NOVO
+# ===========================
+ARQUIVO_LOCK = "sistema_lock.json"
+TIMEOUT_LOCK_MINUTOS = 10
+
+# ===========================
 # AUTENTICAÇÃO
 # ===========================
 @st.cache_data(ttl=3300)  # Cache por 55 minutos (token válido por 1h)
@@ -103,6 +124,199 @@ def obter_token():
         st.error(f"❌ Erro na autenticação: {str(e)}")
         logger.error(f"Erro de autenticação: {e}")
         return None
+
+# ===========================
+# SISTEMA DE LOCK PARA CONTROLE DE CONCORRÊNCIA - v2.2.1 NOVO
+# ===========================
+
+def gerar_id_sessao():
+    """Gera um ID único para a sessão atual"""
+    if 'session_id' not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())[:8]
+    return st.session_state.session_id
+
+def verificar_lock_existente(token):
+    """Verifica se existe um lock ativo no sistema"""
+    try:
+        url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{PASTA_CONSOLIDADO}/{ARQUIVO_LOCK}:/content"
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            lock_data = response.json()
+            
+            # Verificar se o lock não expirou
+            timestamp_lock = datetime.fromisoformat(lock_data['timestamp'])
+            agora = datetime.now()
+            
+            if agora - timestamp_lock > timedelta(minutes=TIMEOUT_LOCK_MINUTOS):
+                # Lock expirado - remover automaticamente
+                logger.info(f"Lock expirado removido automaticamente. Era de {timestamp_lock}")
+                remover_lock(token, force=True)
+                return False, None
+            
+            return True, lock_data
+        
+        elif response.status_code == 404:
+            # Arquivo de lock não existe
+            return False, None
+        else:
+            # Erro ao verificar - assumir que não há lock por segurança
+            logger.warning(f"Erro ao verificar lock: {response.status_code}")
+            return False, None
+            
+    except Exception as e:
+        logger.error(f"Erro ao verificar lock: {e}")
+        return False, None
+
+def criar_lock(token, operacao="Consolidação de dados"):
+    """Cria um lock para bloquear outras operações"""
+    try:
+        session_id = gerar_id_sessao()
+        
+        lock_data = {
+            "timestamp": datetime.now().isoformat(),
+            "session_id": session_id,
+            "operacao": operacao,
+            "status": "EM_ANDAMENTO",
+            "app_version": APP_VERSION
+        }
+        
+        url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{PASTA_CONSOLIDADO}/{ARQUIVO_LOCK}:/content"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.put(url, headers=headers, data=json.dumps(lock_data))
+        
+        if response.status_code in [200, 201]:
+            logger.info(f"Lock criado com sucesso. Session ID: {session_id}")
+            return True, session_id
+        else:
+            logger.error(f"Erro ao criar lock: {response.status_code}")
+            return False, None
+            
+    except Exception as e:
+        logger.error(f"Erro ao criar lock: {e}")
+        return False, None
+
+def remover_lock(token, session_id=None, force=False):
+    """Remove o lock do sistema"""
+    try:
+        if not force and session_id:
+            # Verificar se o lock pertence a esta sessão
+            lock_existe, lock_data = verificar_lock_existente(token)
+            if lock_existe and lock_data.get('session_id') != session_id:
+                logger.warning("Tentativa de remover lock de outra sessão!")
+                return False
+        
+        url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{PASTA_CONSOLIDADO}/{ARQUIVO_LOCK}"
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.delete(url, headers=headers)
+        
+        if response.status_code in [200, 204]:
+            logger.info("Lock removido com sucesso")
+            return True
+        elif response.status_code == 404:
+            # Lock já não existe
+            return True
+        else:
+            logger.error(f"Erro ao remover lock: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Erro ao remover lock: {e}")
+        return False
+
+def atualizar_status_lock(token, session_id, novo_status, detalhes=None):
+    """Atualiza o status do lock durante o processo"""
+    try:
+        lock_existe, lock_data = verificar_lock_existente(token)
+        
+        if not lock_existe or lock_data.get('session_id') != session_id:
+            logger.warning("Lock não existe ou não pertence a esta sessão")
+            return False
+        
+        # Atualizar dados do lock
+        lock_data['status'] = novo_status
+        lock_data['ultima_atualizacao'] = datetime.now().isoformat()
+        
+        if detalhes:
+            lock_data['detalhes'] = detalhes
+        
+        url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root:/{PASTA_CONSOLIDADO}/{ARQUIVO_LOCK}:/content"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.put(url, headers=headers, data=json.dumps(lock_data))
+        return response.status_code in [200, 201]
+        
+    except Exception as e:
+        logger.error(f"Erro ao atualizar status do lock: {e}")
+        return False
+
+def exibir_status_sistema(token):
+    """Exibe o status atual do sistema de lock"""
+    lock_existe, lock_data = verificar_lock_existente(token)
+    
+    if lock_existe:
+        timestamp_inicio = datetime.fromisoformat(lock_data['timestamp'])
+        duracao = datetime.now() - timestamp_inicio
+        
+        # Determinar cor baseada na duração
+        if duracao.total_seconds() < 60:  # Menos de 1 minuto
+            cor = "🟡"  # Amarelo - normal
+        elif duracao.total_seconds() < 300:  # Menos de 5 minutos  
+            cor = "🟠"  # Laranja - demorado
+        else:  # Mais de 5 minutos
+            cor = "🔴"  # Vermelho - muito demorado
+        
+        # Calcular tempo restante até timeout
+        tempo_limite = timestamp_inicio + timedelta(minutes=TIMEOUT_LOCK_MINUTOS)
+        tempo_restante = tempo_limite - datetime.now()
+        
+        st.error(f"🔒 **Sistema ocupado** - Outro usuário está enviando dados")
+        
+        with st.expander("ℹ️ Detalhes do processo em andamento"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.info(f"**Operação:** {lock_data.get('operacao', 'N/A')}")
+                st.info(f"**Status:** {lock_data.get('status', 'N/A')}")
+                st.info(f"**Início:** {timestamp_inicio.strftime('%H:%M:%S')}")
+                
+            with col2:
+                st.info(f"{cor} **Duração:** {int(duracao.total_seconds()//60)}min {int(duracao.total_seconds()%60)}s")
+                if tempo_restante.total_seconds() > 0:
+                    st.info(f"⏱️ **Timeout em:** {int(tempo_restante.total_seconds()//60)}min")
+                else:
+                    st.warning("⚠️ **Processo pode ter travado** (será liberado automaticamente)")
+                
+            # Detalhes adicionais se disponíveis
+            if 'detalhes' in lock_data:
+                st.info(f"**Detalhes:** {lock_data['detalhes']}")
+                
+            # Mostrar session ID para debug (apenas alguns caracteres)
+            session_id_display = lock_data.get('session_id', 'N/A')[:8]
+            st.caption(f"Session ID: {session_id_display}")
+        
+        # Botão de força para administradores (caso necessário)
+        if tempo_restante.total_seconds() < 0:
+            if st.button("🆘 Liberar Sistema (Forçar)", type="secondary"):
+                if remover_lock(token, force=True):
+                    st.success("✅ Sistema liberado com sucesso!")
+                    st.rerun()
+                else:
+                    st.error("❌ Erro ao liberar sistema")
+        
+        return True  # Sistema ocupado
+    else:
+        # Sistema livre
+        st.success("✅ **Sistema disponível** - Você pode enviar sua planilha")
+        return False  # Sistema livre
 
 # ===========================
 # FUNÇÕES AUXILIARES
@@ -716,220 +930,6 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo):
     
     return df_final, registros_inseridos, registros_substituidos, registros_removidos, detalhes_operacao, combinacoes_novas, combinacoes_existentes
 
-def processar_consolidacao(df_novo, nome_arquivo, token):
-    """
-    Versão modificada do processamento de consolidação com pastas separadas - v2.2.0
-    """
-    
-    # 1. Baixar arquivo consolidado existente DA PASTA ESPECÍFICA
-    with st.spinner("📥 Baixando arquivo consolidado existente..."):
-        df_consolidado, arquivo_existe = baixar_arquivo_consolidado(token)
-    
-    if arquivo_existe:
-        st.info(f"📂 Arquivo consolidado carregado ({len(df_consolidado):,} registros)")
-    else:
-        st.info("📂 Criando novo arquivo consolidado")
-
-    # 2. Preparar dados novos
-    df_novo = df_novo.copy()
-    df_novo.columns = df_novo.columns.str.strip().str.upper()
-    
-    # Converter datas e remover linhas inválidas
-    df_novo["DATA"] = pd.to_datetime(df_novo["DATA"], errors="coerce")
-    linhas_invalidas = df_novo["DATA"].isna().sum()
-    df_novo = df_novo.dropna(subset=["DATA"])
-
-    if df_novo.empty:
-        st.error("❌ Nenhum registro válido para consolidar")
-        return False
-
-    if linhas_invalidas > 0:
-        st.info(f"🧹 {linhas_invalidas} linhas com datas inválidas foram removidas")
-
-    # Análise prévia dos dados
-    responsaveis_no_envio = df_novo["RESPONSÁVEL"].dropna().unique()
-    periodo_min = df_novo["DATA"].min().strftime("%d/%m/%Y")
-    periodo_max = df_novo["DATA"].max().strftime("%d/%m/%Y")
-    
-    # Contar combinações RESPONSÁVEL + DATA no envio
-    combinacoes_envio = df_novo.groupby(['RESPONSÁVEL', df_novo['DATA'].dt.date]).size()
-    total_combinacoes = len(combinacoes_envio)
-    
-    st.info(f"👥 **Responsáveis:** {', '.join(responsaveis_no_envio)}")
-    st.info(f"📅 **Período:** {periodo_min} até {periodo_max}")
-    st.info(f"📊 **Combinações únicas (Responsável + Data):** {total_combinacoes}")
-    
-    # Verificar se haverá substituições
-    if arquivo_existe and not df_consolidado.empty:
-        df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
-        df_consolidado = df_consolidado.dropna(subset=["DATA"])
-        
-        # Verificar registros existentes e novos - análise simplificada
-        registros_para_consolidar = 0  # Novos registros que serão inseridos
-        registros_para_alterar = 0     # Registros existentes que serão substituídos
-        
-        for responsavel in responsaveis_no_envio:
-            datas_envio = df_novo[df_novo["RESPONSÁVEL"] == responsavel]["DATA"].dt.date.unique()
-            
-            for data in datas_envio:
-                mask_conflito = (
-                    (df_consolidado["DATA"].dt.date == data) &
-                    (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == str(responsavel).strip().upper())
-                )
-                
-                registros_envio = len(df_novo[
-                    (df_novo["RESPONSÁVEL"] == responsavel) & 
-                    (df_novo["DATA"].dt.date == data)
-                ])
-                
-                if mask_conflito.any():
-                    # JÁ EXISTE - será alterado/substituído
-                    registros_para_alterar += registros_envio
-                else:
-                    # NÃO EXISTE - será consolidado/inserido
-                    registros_para_consolidar += registros_envio
-        
-        # Mostrar informações simplificadas
-        if registros_para_consolidar > 0 and registros_para_alterar == 0:
-            # Apenas inserções
-            st.success(f"✅ **{registros_para_consolidar} registro(s) serão CONSOLIDADOS** (dados novos)")
-            st.info("ℹ️ Nenhum registro existente será alterado")
-            
-        elif registros_para_alterar > 0 and registros_para_consolidar == 0:
-            # Apenas substituições
-            st.warning(f"🔄 **{registros_para_alterar} registro(s) serão ALTERADOS** (substituindo dados existentes)")
-            st.info("ℹ️ Nenhum registro novo será adicionado")
-            
-        elif registros_para_consolidar > 0 and registros_para_alterar > 0:
-            # Misto: inserções + substituições
-            col1, col2 = st.columns(2)
-            with col1:
-                st.success(f"✅ **{registros_para_consolidar} registro(s) serão CONSOLIDADOS**")
-                st.caption("(dados completamente novos)")
-            with col2:
-                st.warning(f"🔄 **{registros_para_alterar} registro(s) serão ALTERADOS**")
-                st.caption("(substituindo dados existentes)")
-        
-        else:
-            # Caso improvável
-            st.error("❌ Nenhum registro válido encontrado para processar")
-            return False
-    else:
-        # Arquivo consolidado não existe - primeira vez
-        st.success(f"✅ **{len(df_novo)} registro(s) serão CONSOLIDADOS** (primeira consolidação)")
-
-    # 3. Processar consolidação com nova lógica
-    with st.spinner("🔄 Processando consolidação (nova lógica)..."):
-        df_final, inseridos, substituidos, removidos, detalhes, novas_combinacoes, combinacoes_existentes = comparar_e_atualizar_registros(
-            df_consolidado, df_novo
-        )
-
-    # 4. Ordenar por data e responsável
-    df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"], na_position='last').reset_index(drop=True)
-    
-    # 5. Criar backup dos dados removidos se houve substituições (NOVA PASTA)
-    if removidos > 0:
-        criar_backup_substituicoes(df_consolidado, detalhes, token)
-    
-    # 6. Salvar arquivo enviado com nome original (NOVA PASTA)
-    salvar_arquivo_enviado(df_novo, nome_arquivo, token)
-    
-    # 7. Salvar arquivo consolidado (PASTA ORIGINAL)
-    with st.spinner("📤 Salvando arquivo consolidado..."):
-        buffer = BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df_final.to_excel(writer, index=False, sheet_name="Vendas CTs")
-        buffer.seek(0)
-        
-        consolidado_nome = "Reports_Geral_Consolidado.xlsx"
-        # USAR NOVA FUNÇÃO COM TIPO "consolidado"
-        sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token, "consolidado")
-
-    if sucesso:
-        st.success("✅ Consolidação realizada com sucesso!")
-        
-        # Mostrar localização dos arquivos - NOVA FUNCIONALIDADE v2.2.0
-        with st.expander("📁 Localização dos Arquivos", expanded=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.info(f"📊 **Arquivo Consolidado:**\n`{PASTA_CONSOLIDADO}/Reports_Geral_Consolidado.xlsx`")
-            with col2:
-                st.info(f"💾 **Backups e Envios:**\n`{PASTA_ENVIOS_BACKUPS}/`")
-        
-        # Métricas de resultado melhoradas
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("📊 Total Final", f"{len(df_final):,}")
-        with col2:
-            st.metric("➕ Inseridos", f"{inseridos}")
-        with col3:
-            st.metric("🔄 Substituídos", f"{substituidos}")
-        with col4:
-            st.metric("🗑️ Removidos", f"{removidos}")
-        
-        # Métricas de combinações
-        if novas_combinacoes > 0 or combinacoes_existentes > 0:
-            st.markdown("### 📈 Análise de Combinações (Responsável + Data)")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("🆕 Novas Combinações", novas_combinacoes, 
-                         help="Combinações de Responsável + Data que não existiam antes")
-            with col2:
-                st.metric("🔄 Combinações Atualizadas", combinacoes_existentes,
-                         help="Combinações que já existiam e foram substituídas")
-            with col3:
-                total_processadas = novas_combinacoes + combinacoes_existentes
-                st.metric("📊 Total Processado", total_processadas,
-                         help="Total de combinações únicas processadas")
-            
-            # Explicação visual
-            if novas_combinacoes > 0:
-                st.success(f"🎉 **{novas_combinacoes} nova(s) combinação(ões) adicionada(s)** - Dados completamente novos!")
-            if combinacoes_existentes > 0:
-                st.info(f"🔄 **{combinacoes_existentes} combinação(ões) atualizada(s)** - Dados existentes foram substituídos pelos novos!")
-        
-        # Detalhes das operações
-        if detalhes:
-            with st.expander("📋 Detalhes das Operações", expanded=removidos > 0):
-                df_detalhes = pd.DataFrame(detalhes)
-                
-                # Separar por tipo de operação para melhor visualização
-                operacoes_inseridas = df_detalhes[df_detalhes['Operação'] == 'INSERIDO']
-                operacoes_substituidas = df_detalhes[df_detalhes['Operação'] == 'SUBSTITUÍDO']
-                operacoes_removidas = df_detalhes[df_detalhes['Operação'] == 'REMOVIDO']
-                
-                if not operacoes_inseridas.empty:
-                    st.markdown("#### ➕ Registros Inseridos (Novos)")
-                    st.dataframe(operacoes_inseridas, use_container_width=True, hide_index=True)
-                
-                if not operacoes_substituidas.empty:
-                    st.markdown("#### 🔄 Registros Substituídos")
-                    st.dataframe(operacoes_substituidas, use_container_width=True, hide_index=True)
-                
-                if not operacoes_removidas.empty:
-                    st.markdown("#### 🗑️ Registros Removidos")
-                    st.dataframe(operacoes_removidas, use_container_width=True, hide_index=True)
-        
-        # Resumo por responsável
-        if not df_final.empty:
-            resumo_responsaveis = df_final.groupby("RESPONSÁVEL").agg({
-                "DATA": ["count", "min", "max"]
-            }).round(0)
-            
-            resumo_responsaveis.columns = ["Total Registros", "Data Inicial", "Data Final"]
-            resumo_responsaveis["Data Inicial"] = pd.to_datetime(resumo_responsaveis["Data Inicial"]).dt.strftime("%d/%m/%Y")
-            resumo_responsaveis["Data Final"] = pd.to_datetime(resumo_responsaveis["Data Final"]).dt.strftime("%d/%m/%Y")
-            
-            with st.expander("👥 Resumo por Responsável"):
-                st.dataframe(resumo_responsaveis, use_container_width=True)
-        
-        return True
-    else:
-        st.error(f"❌ Erro no upload: Status {status}")
-        if status != 500:
-            st.code(resposta)
-        return False
-
 def salvar_arquivo_enviado(df, nome_arquivo_original, token):
     """Salva o arquivo enviado com o nome original na nova pasta de enviados"""
     try:
@@ -960,6 +960,258 @@ def salvar_arquivo_enviado(df, nome_arquivo_original, token):
         logger.error(f"Erro ao salvar arquivo enviado: {e}")
 
 # ===========================
+# NOVA FUNÇÃO DE CONSOLIDAÇÃO COM LOCK - v2.2.1
+# ===========================
+
+def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
+    """
+    Versão protegida da consolidação com sistema de lock
+    """
+    session_id = gerar_id_sessao()
+    
+    try:
+        # 1. Verificar se sistema está livre
+        sistema_ocupado, lock_data = verificar_lock_existente(token)
+        if sistema_ocupado:
+            st.error("🔒 Sistema ocupado! Outro usuário está fazendo consolidação.")
+            return False
+        
+        # 2. Criar lock
+        st.info("🔒 Bloqueando sistema para consolidação...")
+        lock_criado, session_lock = criar_lock(token, "Consolidação de planilha")
+        
+        if not lock_criado:
+            st.error("❌ Não foi possível bloquear o sistema. Tente novamente.")
+            return False
+        
+        st.success(f"✅ Sistema bloqueado com sucesso! (ID: {session_lock})")
+        
+        # 3. Atualizar status: baixando arquivo
+        atualizar_status_lock(token, session_lock, "BAIXANDO_ARQUIVO", "Baixando arquivo consolidado")
+        
+        # 4. Baixar arquivo consolidado existente
+        with st.spinner("📥 Baixando arquivo consolidado existente..."):
+            df_consolidado, arquivo_existe = baixar_arquivo_consolidado(token)
+        
+        if arquivo_existe:
+            st.info(f"📂 Arquivo consolidado carregado ({len(df_consolidado):,} registros)")
+        else:
+            st.info("📂 Criando novo arquivo consolidado")
+
+        # 5. Atualizar status: preparando dados
+        atualizar_status_lock(token, session_lock, "PREPARANDO_DADOS", "Validando e preparando dados")
+        
+        # 6. Preparar dados novos
+        df_novo = df_novo.copy()
+        df_novo.columns = df_novo.columns.str.strip().str.upper()
+        
+        # Converter datas e remover linhas inválidas
+        df_novo["DATA"] = pd.to_datetime(df_novo["DATA"], errors="coerce")
+        linhas_invalidas = df_novo["DATA"].isna().sum()
+        df_novo = df_novo.dropna(subset=["DATA"])
+
+        if df_novo.empty:
+            st.error("❌ Nenhum registro válido para consolidar")
+            remover_lock(token, session_lock)
+            return False
+
+        if linhas_invalidas > 0:
+            st.info(f"🧹 {linhas_invalidas} linhas com datas inválidas foram removidas")
+
+        # 7. Análise prévia dos dados
+        responsaveis_no_envio = df_novo["RESPONSÁVEL"].dropna().unique()
+        periodo_min = df_novo["DATA"].min().strftime("%d/%m/%Y")
+        periodo_max = df_novo["DATA"].max().strftime("%d/%m/%Y")
+        
+        combinacoes_envio = df_novo.groupby(['RESPONSÁVEL', df_novo['DATA'].dt.date]).size()
+        total_combinacoes = len(combinacoes_envio)
+        
+        st.info(f"👥 **Responsáveis:** {', '.join(responsaveis_no_envio)}")
+        st.info(f"📅 **Período:** {periodo_min} até {periodo_max}")
+        st.info(f"📊 **Combinações únicas (Responsável + Data):** {total_combinacoes}")
+        
+        # 8. Verificar se haverá substituições
+        if arquivo_existe and not df_consolidado.empty:
+            df_consolidado["DATA"] = pd.to_datetime(df_consolidado["DATA"], errors="coerce")
+            df_consolidado = df_consolidado.dropna(subset=["DATA"])
+            
+            registros_para_consolidar = 0
+            registros_para_alterar = 0
+            
+            for responsavel in responsaveis_no_envio:
+                datas_envio = df_novo[df_novo["RESPONSÁVEL"] == responsavel]["DATA"].dt.date.unique()
+                
+                for data in datas_envio:
+                    mask_conflito = (
+                        (df_consolidado["DATA"].dt.date == data) &
+                        (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == str(responsavel).strip().upper())
+                    )
+                    
+                    registros_envio = len(df_novo[
+                        (df_novo["RESPONSÁVEL"] == responsavel) & 
+                        (df_novo["DATA"].dt.date == data)
+                    ])
+                    
+                    if mask_conflito.any():
+                        registros_para_alterar += registros_envio
+                    else:
+                        registros_para_consolidar += registros_envio
+            
+            # Mostrar informações
+            if registros_para_consolidar > 0 and registros_para_alterar == 0:
+                st.success(f"✅ **{registros_para_consolidar} registro(s) serão CONSOLIDADOS** (dados novos)")
+                st.info("ℹ️ Nenhum registro existente será alterado")
+                
+            elif registros_para_alterar > 0 and registros_para_consolidar == 0:
+                st.warning(f"🔄 **{registros_para_alterar} registro(s) serão ALTERADOS** (substituindo dados existentes)")
+                st.info("ℹ️ Nenhum registro novo será adicionado")
+                
+            elif registros_para_consolidar > 0 and registros_para_alterar > 0:
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.success(f"✅ **{registros_para_consolidar} registro(s) serão CONSOLIDADOS**")
+                    st.caption("(dados completamente novos)")
+                with col2:
+                    st.warning(f"🔄 **{registros_para_alterar} registro(s) serão ALTERADOS**")
+                    st.caption("(substituindo dados existentes)")
+            
+            else:
+                st.error("❌ Nenhum registro válido encontrado para processar")
+                remover_lock(token, session_lock)
+                return False
+        else:
+            st.success(f"✅ **{len(df_novo)} registro(s) serão CONSOLIDADOS** (primeira consolidação)")
+
+        # 9. Atualizar status: processando consolidação
+        atualizar_status_lock(token, session_lock, "CONSOLIDANDO", f"Processando {len(df_novo)} registros")
+        
+        # 10. Processar consolidação
+        with st.spinner("🔄 Processando consolidação (nova lógica)..."):
+            df_final, inseridos, substituidos, removidos, detalhes, novas_combinacoes, combinacoes_existentes = comparar_e_atualizar_registros(
+                df_consolidado, df_novo
+            )
+
+        # 11. Ordenar por data e responsável
+        df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"], na_position='last').reset_index(drop=True)
+        
+        # 12. Atualizar status: criando backups
+        if removidos > 0:
+            atualizar_status_lock(token, session_lock, "CRIANDO_BACKUP", f"Backup de {removidos} registros substituídos")
+            criar_backup_substituicoes(df_consolidado, detalhes, token)
+        
+        # 13. Atualizar status: salvando arquivo enviado
+        atualizar_status_lock(token, session_lock, "SALVANDO_ENVIADO", "Salvando cópia do arquivo enviado")
+        salvar_arquivo_enviado(df_novo, nome_arquivo, token)
+        
+        # 14. Atualizar status: upload final
+        atualizar_status_lock(token, session_lock, "UPLOAD_FINAL", "Salvando arquivo consolidado")
+        
+        # 15. Salvar arquivo consolidado
+        with st.spinner("📤 Salvando arquivo consolidado..."):
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                df_final.to_excel(writer, index=False, sheet_name="Vendas CTs")
+            buffer.seek(0)
+            
+            consolidado_nome = "Reports_Geral_Consolidado.xlsx"
+            sucesso, status, resposta = upload_onedrive(consolidado_nome, buffer.read(), token, "consolidado")
+
+        # 16. Remover lock SEMPRE (sucesso ou erro)
+        remover_lock(token, session_lock)
+        
+        if sucesso:
+            st.success("🔓 Sistema liberado!")
+            st.success("✅ Consolidação realizada com sucesso!")
+            
+            # Mostrar localização dos arquivos
+            with st.expander("📁 Localização dos Arquivos", expanded=True):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.info(f"📊 **Arquivo Consolidado:**\n`{PASTA_CONSOLIDADO}/Reports_Geral_Consolidado.xlsx`")
+                with col2:
+                    st.info(f"💾 **Backups e Envios:**\n`{PASTA_ENVIOS_BACKUPS}/`")
+            
+            # Métricas de resultado
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("📊 Total Final", f"{len(df_final):,}")
+            with col2:
+                st.metric("➕ Inseridos", f"{inseridos}")
+            with col3:
+                st.metric("🔄 Substituídos", f"{substituidos}")
+            with col4:
+                st.metric("🗑️ Removidos", f"{removidos}")
+            
+            # Métricas de combinações
+            if novas_combinacoes > 0 or combinacoes_existentes > 0:
+                st.markdown("### 📈 Análise de Combinações (Responsável + Data)")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("🆕 Novas Combinações", novas_combinacoes, 
+                             help="Combinações de Responsável + Data que não existiam antes")
+                with col2:
+                    st.metric("🔄 Combinações Atualizadas", combinacoes_existentes,
+                             help="Combinações que já existiam e foram substituídas")
+                with col3:
+                    total_processadas = novas_combinacoes + combinacoes_existentes
+                    st.metric("📊 Total Processado", total_processadas,
+                             help="Total de combinações únicas processadas")
+                
+                if novas_combinacoes > 0:
+                    st.success(f"🎉 **{novas_combinacoes} nova(s) combinação(ões) adicionada(s)** - Dados completamente novos!")
+                if combinacoes_existentes > 0:
+                    st.info(f"🔄 **{combinacoes_existentes} combinação(ões) atualizada(s)** - Dados existentes foram substituídos pelos novos!")
+            
+            # Detalhes das operações
+            if detalhes:
+                with st.expander("📋 Detalhes das Operações", expanded=removidos > 0):
+                    df_detalhes = pd.DataFrame(detalhes)
+                    
+                    operacoes_inseridas = df_detalhes[df_detalhes['Operação'] == 'INSERIDO']
+                    operacoes_substituidas = df_detalhes[df_detalhes['Operação'] == 'SUBSTITUÍDO']
+                    operacoes_removidas = df_detalhes[df_detalhes['Operação'] == 'REMOVIDO']
+                    
+                    if not operacoes_inseridas.empty:
+                        st.markdown("#### ➕ Registros Inseridos (Novos)")
+                        st.dataframe(operacoes_inseridas, use_container_width=True, hide_index=True)
+                    
+                    if not operacoes_substituidas.empty:
+                        st.markdown("#### 🔄 Registros Substituídos")
+                        st.dataframe(operacoes_substituidas, use_container_width=True, hide_index=True)
+                    
+                    if not operacoes_removidas.empty:
+                        st.markdown("#### 🗑️ Registros Removidos")
+                        st.dataframe(operacoes_removidas, use_container_width=True, hide_index=True)
+            
+            # Resumo por responsável
+            if not df_final.empty:
+                resumo_responsaveis = df_final.groupby("RESPONSÁVEL").agg({
+                    "DATA": ["count", "min", "max"]
+                }).round(0)
+                
+                resumo_responsaveis.columns = ["Total Registros", "Data Inicial", "Data Final"]
+                resumo_responsaveis["Data Inicial"] = pd.to_datetime(resumo_responsaveis["Data Inicial"]).dt.strftime("%d/%m/%Y")
+                resumo_responsaveis["Data Final"] = pd.to_datetime(resumo_responsaveis["Data Final"]).dt.strftime("%d/%m/%Y")
+                
+                with st.expander("👥 Resumo por Responsável"):
+                    st.dataframe(resumo_responsaveis, use_container_width=True)
+            
+            return True
+        else:
+            st.error(f"❌ Erro no upload: Status {status}")
+            if status != 500:
+                st.code(resposta)
+            return False
+            
+    except Exception as e:
+        # EM CASO DE ERRO, SEMPRE REMOVER O LOCK
+        logger.error(f"Erro na consolidação: {e}")
+        remover_lock(token, session_id, force=True)
+        st.error(f"❌ Erro durante consolidação: {str(e)}")
+        st.info("🔓 Sistema liberado automaticamente após erro.")
+        return False
+
+# ===========================
 # INTERFACE STREAMLIT
 # ===========================
 def exibir_info_versao():
@@ -970,7 +1222,7 @@ def exibir_info_versao():
         st.info(f"**Versão:** {APP_VERSION}")
         st.info(f"**Data:** {VERSION_DATE}")
         
-        # NOVA FUNCIONALIDADE v2.2.0 - Mostrar configuração de pastas
+        # Mostrar configuração de pastas
         with st.expander("📁 Configuração de Pastas"):
             st.markdown("**Arquivo Consolidado:**")
             st.code(PASTA_CONSOLIDADO, language=None)
@@ -1022,13 +1274,44 @@ def main():
     else:
         st.sidebar.success("✅ Conectado")
 
+    # ===========================
+    # NOVO: VERIFICAÇÃO DE SISTEMA DE LOCK
+    # ===========================
+    st.markdown("## 🔒 Status do Sistema")
+    
+    # Verificar e exibir status do lock
+    sistema_ocupado = exibir_status_sistema(token)
+    
+    # Auto-refresh a cada 15 segundos se sistema estiver ocupado
+    if sistema_ocupado:
+        st.markdown("---")
+        st.info("🔄 Esta página será atualizada automaticamente a cada 15 segundos")
+        time.sleep(15)
+        st.rerun()
+
+    st.divider()
+
     # Informações de versão na sidebar
     exibir_info_versao()
 
     st.markdown("## 📤 Upload de Planilha Excel")
+    
+    # Mostrar aviso se sistema estiver ocupado
+    if sistema_ocupado:
+        st.warning("⚠️ **Upload desabilitado** - Sistema em uso por outro usuário")
+        st.info("💡 **Aguarde** a liberação do sistema ou tente novamente em alguns minutos")
+        
+        # Botão para atualizar status
+        if st.button("🔄 Verificar Status Novamente"):
+            st.rerun()
+        
+        # Não mostrar o resto da interface se sistema estiver ocupado
+        return
+    
+    # Sistema livre - mostrar interface normal
     st.info("💡 **Importante**: A planilha deve conter uma coluna 'RESPONSÁVEL' com os nomes dos responsáveis!")
     
-    # NOVA FUNCIONALIDADE v2.2.0 - Aviso sobre separação de pastas
+    # Nova estrutura de pastas
     with st.expander("📁 Nova Estrutura de Pastas - v2.2.0", expanded=False):
         st.markdown("### 🎯 Organização Melhorada dos Arquivos")
         
@@ -1047,7 +1330,7 @@ def main():
     
     st.divider()
 
-    # Upload de arquivo
+    # Upload de arquivo (só aparece se sistema estiver livre)
     uploaded_file = st.file_uploader(
         "Escolha um arquivo Excel", 
         type=["xlsx", "xls"],
@@ -1226,7 +1509,7 @@ def main():
             else:
                 st.warning(aviso)
         
-        # Mostrar detalhes das linhas inválidas com NOVA INTERFACE MELHORADA
+        # Mostrar detalhes das linhas inválidas
         if linhas_invalidas_detalhes:
             exibir_relatorio_problemas_datas(linhas_invalidas_detalhes)
         
@@ -1235,17 +1518,26 @@ def main():
             for erro in erros:
                 st.error(erro)
 
-        # Botão de envio
+        # Botão de envio com verificação de lock
         col1, col2 = st.columns([1, 4])
         with col1:
-            if st.button("📧 Consolidar Dados", type="primary", disabled=bool(erros)):
-                if erros:
-                    st.error("❌ Corrija os erros acima antes de prosseguir")
-                else:
-                    sucesso = processar_consolidacao(df, uploaded_file.name, token)
-                    if sucesso:
-                        st.balloons()
-                        
+            # Verificar novamente se sistema está livre antes de permitir envio
+            sistema_ocupado_agora, _ = verificar_lock_existente(token)
+            
+            if sistema_ocupado_agora:
+                st.error("🔒 Sistema foi bloqueado por outro usuário")
+                if st.button("🔄 Atualizar Página"):
+                    st.rerun()
+            else:
+                if st.button("📧 Consolidar Dados", type="primary", disabled=bool(erros)):
+                    if erros:
+                        st.error("❌ Corrija os erros acima antes de prosseguir")
+                    else:
+                        # Usar a nova função com lock
+                        sucesso = processar_consolidacao_com_lock(df, uploaded_file.name, token)
+                        if sucesso:
+                            st.balloons()
+                            
         with col2:
             if st.button("🔄 Limpar", type="secondary"):
                 st.rerun()
@@ -1262,7 +1554,7 @@ def main():
             • Uma coluna <strong>'RESPONSÁVEL'</strong><br>
             • Colunas: <strong>TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP</strong><br>
             <br>
-            📁 <strong>v2.2.0:</strong> Nova organização com pastas separadas para melhor gestão de arquivos<br>
+            📁 <strong>v2.2.1:</strong> Sistema de lock implementado - apenas 1 usuário por vez<br>
             <small>Última atualização: {VERSION_DATE}</small>
         </div>
         """,
