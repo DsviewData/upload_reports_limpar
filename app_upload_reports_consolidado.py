@@ -585,3 +585,13 @@ def salvar_arquivo_enviado(df, responsavel, token):
             with pd.ExcelWriter(buffer_envio, engine='openpyxl') as writer:
                 df.to_excel(writer, index=False, sheet_name="Vendas CTs")
             buffer_envio.seek(0)
+            
+            sucesso, _, _ = upload_onedrive(nome_arquivo, buffer_envio.read(), token)
+            if sucesso:
+                st.info(f"💾 Cópia salva em: {nome_arquivo}")
+            else:
+                st.warning("⚠️ Não foi possível salvar cópia do arquivo enviado")
+                
+    except Exception as e:
+        st.warning(f"⚠️ Não foi possível salvar cópia do arquivo: {e}")
+        logger.error(f"Erro ao salvar arquivo enviado: {e}")
