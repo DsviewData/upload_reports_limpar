@@ -6,7 +6,6 @@ from io import BytesIO
 from msal import ConfidentialClientApplication
 import unicodedata
 import logging
-import re
 import os
 
 # Configurar logging para debug
@@ -52,36 +51,7 @@ def obter_token():
         return None
 
 # === FUNÇÕES AUXILIARES ===
-def extrair_responsavel_do_arquivo(nome_arquivo):
-    """Extrai o nome do responsável do nome do arquivo"""
-    try:
-        # Remove extensão
-        nome_sem_extensao = os.path.splitext(nome_arquivo)[0]
-        
-        # Remove palavras comuns que não são nomes (opcional)
-        palavras_ignorar = ['relatorio', 'report', 'vendas', 'dados', 'planilha', 'excel', 'cts']
-        
-        # Limpa o nome removendo caracteres especiais e números
-        nome_limpo = re.sub(r'[0-9_-]', ' ', nome_sem_extensao)
-        nome_limpo = re.sub(r'\s+', ' ', nome_limpo).strip()
-        
-        # Se o nome estiver vazio ou muito curto, usar nome do arquivo original
-        if len(nome_limpo) < 3:
-            nome_limpo = nome_sem_extensao.replace('_', ' ').replace('-', ' ')
-        
-        # Capitalizar primeira letra de cada palavra
-        responsavel = ' '.join(word.capitalize() for word in nome_limpo.split() 
-                              if word.lower() not in palavras_ignorar and len(word) > 1)
-        
-        # Se ainda estiver vazio, usar o nome original do arquivo
-        if not responsavel.strip():
-            responsavel = nome_sem_extensao
-            
-        return responsavel.strip()
-        
-    except Exception as e:
-        logger.error(f"Erro ao extrair responsável: {e}")
-        return nome_arquivo
+
 
 def criar_pasta_se_nao_existir(caminho_pasta, token):
     """Cria pasta no OneDrive se não existir"""
@@ -184,7 +154,7 @@ def upload_onedrive(nome_arquivo, conteudo_arquivo, token):
         return False, 500, f"Erro interno: {str(e)}"
 
 # === FUNÇÕES DE CONSOLIDAÇÃO ===
-def validar_dados_enviados(df, nome_arquivo):
+def validar_dados_enviados(df):
     """Valida os dados enviados pelo usuário"""
     erros = []
     avisos = []
@@ -195,10 +165,27 @@ def validar_dados_enviados(df, nome_arquivo):
         erros.append("❌ A planilha está vazia")
         return erros, avisos, linhas_invalidas_detalhes
     
+    # Validar se existe coluna RESPONSÁVEL
+    if "RESPONSÁVEL" not in df.columns:
+        erros.append("⚠️ A planilha deve conter uma coluna 'RESPONSÁVEL'")
+        avisos.append("📋 Certifique-se de que sua planilha tenha uma coluna chamada 'RESPONSÁVEL'")
+    else:
+        # Validar se há responsáveis válidos
+        responsaveis_validos = df["RESPONSÁVEL"].notna().sum()
+        if responsaveis_validos == 0:
+            erros.append("❌ Nenhum responsável válido encontrado na coluna 'RESPONSÁVEL'")
+        else:
+            # Mostrar responsáveis únicos encontrados
+            responsaveis_unicos = df["RESPONSÁVEL"].dropna().unique()
+            if len(responsaveis_unicos) > 0:
+                avisos.append(f"👥 Responsáveis encontrados: {', '.join(responsaveis_unicos[:5])}")
+                if len(responsaveis_unicos) > 5:
+                    avisos.append(f"... e mais {len(responsaveis_unicos) - 5} responsáveis")
+    
     # Validar se existe coluna DATA
     if "DATA" not in df.columns:
         erros.append("⚠️ A planilha deve conter uma coluna 'DATA'")
-        avisos.append("📋 Lembre-se: o arquivo deve ter uma aba chamada 'Vendas CTs' com a coluna 'DATA'")
+        avisos.append("📋 Lembre-se: o arquivo deve ter uma aba chamada 'Vendas CTs' com as colunas 'DATA' e 'RESPONSÁVEL'")
     else:
         # Validar se as datas são válidas
         df_temp = df.copy()
@@ -256,7 +243,7 @@ def baixar_arquivo_consolidado(token):
         logger.error(f"Erro ao baixar arquivo consolidado: {e}")
         return pd.DataFrame(), False
 
-def comparar_e_atualizar_registros(df_consolidado, df_novo, responsavel):
+def comparar_e_atualizar_registros(df_consolidado, df_novo):
     """Compara registros usando RESPONSÁVEL e DATA e atualiza conforme necessário"""
     registros_atualizados = 0
     registros_inseridos = 0
@@ -279,10 +266,14 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo, responsavel):
         data_nova = row_nova["DATA"]
         responsavel_novo = row_nova["RESPONSÁVEL"]
         
+        # Pular linhas sem responsável
+        if pd.isna(responsavel_novo) or str(responsavel_novo).strip() == '':
+            continue
+        
         # Buscar registros existentes com mesma data e responsável
         mask_existente = (
             (df_consolidado["DATA"].dt.normalize() == data_nova.normalize()) &
-            (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == responsavel_novo.strip().upper())
+            (df_consolidado["RESPONSÁVEL"].str.strip().str.upper() == str(responsavel_novo).strip().upper())
         )
         
         registros_existentes = df_consolidado[mask_existente]
@@ -329,10 +320,6 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo, responsavel):
 def processar_consolidacao(df_novo, nome_arquivo, token):
     """Processa a consolidação dos dados com lógica melhorada"""
     
-    # Extrair responsável do nome do arquivo
-    responsavel = extrair_responsavel_do_arquivo(nome_arquivo)
-    st.info(f"👤 Responsável identificado: **{responsavel}**")
-    
     # 1. Baixar arquivo consolidado existente
     with st.spinner("📥 Baixando arquivo consolidado existente..."):
         df_consolidado, arquivo_existe = baixar_arquivo_consolidado(token)
@@ -344,7 +331,6 @@ def processar_consolidacao(df_novo, nome_arquivo, token):
 
     # 2. Preparar dados novos
     df_novo = df_novo.copy()
-    df_novo["RESPONSÁVEL"] = responsavel
     df_novo.columns = df_novo.columns.str.strip().str.upper()
     
     # Converter datas e remover linhas inválidas
@@ -359,6 +345,11 @@ def processar_consolidacao(df_novo, nome_arquivo, token):
     if linhas_invalidas > 0:
         st.info(f"🧹 {linhas_invalidas} linhas com datas inválidas foram removidas")
 
+    # Mostrar responsáveis que serão processados
+    responsaveis_processados = df_novo["RESPONSÁVEL"].dropna().unique()
+    if len(responsaveis_processados) > 0:
+        st.info(f"👥 Processando dados para: **{', '.join(responsaveis_processados)}**")
+
     # 3. Processar consolidação com lógica melhorada
     with st.spinner("🔄 Processando consolidação..."):
         if not df_consolidado.empty:
@@ -366,14 +357,14 @@ def processar_consolidacao(df_novo, nome_arquivo, token):
             df_consolidado = df_consolidado.dropna(subset=["DATA"])
         
         df_final, inseridos, atualizados, ignorados = comparar_e_atualizar_registros(
-            df_consolidado, df_novo, responsavel
+            df_consolidado, df_novo
         )
 
     # 4. Ordenar por data e responsável
     df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"], na_position='last').reset_index(drop=True)
     
     # 5. Salvar arquivo enviado com nome original
-    salvar_arquivo_enviado(df_novo, nome_arquivo, responsavel, token)
+    salvar_arquivo_enviado(df_novo, nome_arquivo, token)
     
     # 6. Salvar arquivo consolidado
     with st.spinner("📤 Salvando arquivo consolidado..."):
@@ -412,7 +403,7 @@ def processar_consolidacao(df_novo, nome_arquivo, token):
             st.code(resposta)
         return False
 
-def salvar_arquivo_enviado(df, nome_arquivo_original, responsavel, token):
+def salvar_arquivo_enviado(df, nome_arquivo_original, token):
     """Salva o arquivo enviado com o nome original na pasta de enviados"""
     try:
         if not df.empty and "DATA" in df.columns:
@@ -474,24 +465,21 @@ def main():
         st.sidebar.success("✅ Conectado")
 
     st.markdown("## 📤 Upload de Planilha Excel")
-    st.info("💡 **Novidade**: O responsável será identificado automaticamente pelo nome do arquivo!")
+    st.info("💡 **Importante**: A planilha deve conter uma coluna 'RESPONSÁVEL' com os nomes dos responsáveis!")
     st.divider()
 
     # Upload de arquivo
     uploaded_file = st.file_uploader(
         "Escolha um arquivo Excel", 
         type=["xlsx", "xls"],
-        help="Formatos aceitos: .xlsx, .xls | O responsável será extraído do nome do arquivo"
+        help="Formatos aceitos: .xlsx, .xls | Certifique-se de que há uma coluna 'RESPONSÁVEL' na planilha"
     )
 
     # Processar arquivo carregado
     df = None
     if uploaded_file:
         try:
-            # Mostrar responsável identificado
-            responsavel_identificado = extrair_responsavel_do_arquivo(uploaded_file.name)
-            st.success(f"📁 Arquivo: **{uploaded_file.name}**")
-            st.info(f"👤 Responsável identificado: **{responsavel_identificado}**")
+            st.success(f"📁 Arquivo carregado: **{uploaded_file.name}**")
             
             # Detectar tipo de arquivo
             file_extension = uploaded_file.name.split('.')[-1].lower()
@@ -650,7 +638,7 @@ def main():
 
         # Validações antes do envio
         st.subheader("🔍 Validações")
-        erros, avisos, linhas_invalidas_detalhes = validar_dados_enviados(df, uploaded_file.name)
+        erros, avisos, linhas_invalidas_detalhes = validar_dados_enviados(df)
         
         # Mostrar avisos
         for aviso in avisos:
@@ -706,8 +694,8 @@ def main():
             ⚠️ Certifique-se de que sua planilha contenha:<br>
             • Uma aba chamada <strong>'Vendas CTs'</strong><br>
             • Uma coluna <strong>'DATA'</strong><br>
-            • Colunas: <strong>TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP</strong><br>
-            • O responsável será <strong>identificado automaticamente</strong> pelo nome do arquivo
+            • Uma coluna <strong>'RESPONSÁVEL'</strong><br>
+            • Colunas: <strong>TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP</strong>
         </div>
         """,
         unsafe_allow_html=True
