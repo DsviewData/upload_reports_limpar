@@ -12,11 +12,32 @@ import uuid
 import time
 
 # ===========================
-# CONFIGURAÇÕES DE VERSÃO - ATUALIZADO v2.2.1
+# CONFIGURAÇÕES DE VERSÃO - ATUALIZADO v2.2.3
 # ===========================
-APP_VERSION = "2.2.1"
-VERSION_DATE = "2025-08-07"
+APP_VERSION = "2.2.3"
+VERSION_DATE = "2025-08-08"
 CHANGELOG = {
+    "2.2.3": {
+        "date": "2025-08-08",
+        "changes": [
+            "🔒 Validação super rigorosa implementada",
+            "❌ QUALQUER problema de data agora impede consolidação",
+            "📋 Obrigatório corrigir TODOS os problemas antes de enviar",
+            "🔧 Inclui: datas vazias, formatos inválidos, datas impossíveis, futuras e antigas",
+            "📊 Mensagem clara solicitando revisão completa da planilha",
+            "🛡️ Zero tolerância para garantir 100% qualidade dos dados"
+        ]
+    },
+    "2.2.2": {
+        "date": "2025-08-08",
+        "changes": [
+            "🔒 Validação rigorosa implementada",
+            "❌ Problemas críticos de data agora impedem consolidação", 
+            "🔧 Datas vazias, formatos inválidos e datas impossíveis devem ser corrigidos",
+            "⚠️ Problemas menores (futuro/antigas) geram apenas avisos",
+            "📊 Categorização inteligente de problemas por severidade"
+        ]
+    },
     "2.2.1": {
         "date": "2025-08-07",
         "changes": [
@@ -683,13 +704,16 @@ def exibir_relatorio_problemas_datas(problemas_datas):
             )
 
 # ===========================
-# VALIDAÇÃO COMPLETA MELHORADA
+# VALIDAÇÃO SUPER RIGOROSA - v2.2.3 NOVA
 # ===========================
 def validar_dados_enviados(df):
     """
-    🔍 VALIDAÇÃO COMPLETA DOS DADOS ENVIADOS - v2.1.0
+    🔍 VALIDAÇÃO SUPER RIGOROSA DOS DADOS ENVIADOS - v2.2.3
     
-    Inclui validação melhorada de datas com detalhamento completo dos problemas
+    QUALQUER problema de data agora IMPEDE consolidação:
+    - VAZIO, FORMATO, IMPOSSÍVEL, FUTURO, ANTIGA
+    
+    Zero tolerância para garantir 100% qualidade dos dados
     """
     erros = []
     avisos = []
@@ -717,7 +741,7 @@ def validar_dados_enviados(df):
                 if len(responsaveis_unicos) > 5:
                     avisos.append(f"... e mais {len(responsaveis_unicos) - 5} responsáveis")
     
-    # NOVA VALIDAÇÃO DETALHADA DE DATAS
+    # NOVA VALIDAÇÃO SUPER RIGOROSA DE DATAS - v2.2.3
     if "DATA" not in df.columns:
         erros.append("⚠️ A planilha deve conter uma coluna 'DATA'")
         avisos.append("📋 Lembre-se: o arquivo deve ter uma aba chamada 'Vendas CTs' com as colunas 'DATA' e 'RESPONSÁVEL'")
@@ -726,14 +750,52 @@ def validar_dados_enviados(df):
         problemas_datas = validar_datas_detalhadamente(df)
         
         if problemas_datas:
-            avisos.append(f"⚠️ {len(problemas_datas)} linhas com problemas de data serão ignoradas")
+            # 🆕 NOVA LÓGICA v2.2.3: QUALQUER problema = ERRO
+            erros.append(f"❌ {len(problemas_datas)} problemas de data encontrados - CONSOLIDAÇÃO BLOQUEADA")
+            erros.append("🔧 É OBRIGATÓRIO corrigir TODOS os problemas antes de enviar")
+            erros.append("📋 Revise sua planilha e corrija todas as datas inválidas")
             
-            # Converter para formato esperado pela interface
+            # Categorizar e detalhar tipos de problemas
+            tipos_problema = {}
+            for problema in problemas_datas:
+                tipo = problema["Tipo Problema"]
+                tipos_problema[tipo] = tipos_problema.get(tipo, 0) + 1
+            
+            # Criar mensagem detalhada dos problemas
+            detalhes_problemas = []
+            emoji_map = {
+                "VAZIO": "🔴",
+                "FORMATO": "🟠", 
+                "IMPOSSÍVEL": "🟣",
+                "FUTURO": "🟡",
+                "ANTIGA": "🟤"
+            }
+            
+            for tipo, qtd in tipos_problema.items():
+                emoji = emoji_map.get(tipo, "❌")
+                detalhes_problemas.append(f"{emoji} {tipo}: {qtd} linha{'s' if qtd > 1 else ''}")
+            
+            erros.append(f"📊 Problemas por tipo: {', '.join(detalhes_problemas)}")
+            
+            # Mensagem específica baseada nos tipos de problema
+            if "VAZIO" in tipos_problema:
+                erros.append("🔴 CRÍTICO: Existem datas em branco - preencha todas as datas")
+            if "FORMATO" in tipos_problema:
+                erros.append("🟠 CRÍTICO: Existem formatos inválidos - use formato DD/MM/AAAA")
+            if "IMPOSSÍVEL" in tipos_problema:
+                erros.append("🟣 CRÍTICO: Existem datas impossíveis - verifique dias e meses")
+            if "FUTURO" in tipos_problema:
+                erros.append("🟡 ATENÇÃO: Existem datas no futuro - confirme se estão corretas")
+            if "ANTIGA" in tipos_problema:
+                erros.append("🟤 ATENÇÃO: Existem datas muito antigas - confirme se estão corretas")
+            
+            # Manter detalhes para exibição na interface
             linhas_invalidas_detalhes = problemas_datas
+            
         else:
             avisos.append("✅ Todas as datas estão válidas e consistentes!")
     
-    # Validar duplicatas na planilha enviada
+    # Validar duplicatas na planilha enviada (apenas aviso - não impede mais)
     if not df.empty and "DATA" in df.columns:
         df_temp = df.copy()
         df_temp["DATA"] = pd.to_datetime(df_temp["DATA"], errors="coerce")
@@ -1222,6 +1284,11 @@ def exibir_info_versao():
         st.info(f"**Versão:** {APP_VERSION}")
         st.info(f"**Data:** {VERSION_DATE}")
         
+        # Destaque para nova versão
+        if APP_VERSION == "2.2.3":
+            st.warning("🔒 **NOVA VALIDAÇÃO SUPER RIGOROSA**")
+            st.caption("QUALQUER problema de data impede consolidação")
+        
         # Mostrar configuração de pastas
         with st.expander("📁 Configuração de Pastas"):
             st.markdown("**Arquivo Consolidado:**")
@@ -1258,6 +1325,10 @@ def main():
         ''',
         unsafe_allow_html=True
     )
+
+    # Destaque para nova versão rigorosa
+    if APP_VERSION == "2.2.3":
+        st.warning("🔒 **VALIDAÇÃO SUPER RIGOROSA ATIVADA** - Qualquer problema de data agora impede a consolidação!")
 
     # Sidebar navigation
     st.sidebar.markdown("### 📤 Upload de Planilhas")
@@ -1310,6 +1381,11 @@ def main():
     
     # Sistema livre - mostrar interface normal
     st.info("💡 **Importante**: A planilha deve conter uma coluna 'RESPONSÁVEL' com os nomes dos responsáveis!")
+    
+    # Aviso sobre validação rigorosa
+    st.error("🔒 **VALIDAÇÃO SUPER RIGOROSA ATIVADA v2.2.3**")
+    st.warning("📋 **QUALQUER problema de data (vazias, formato inválido, futuras, antigas) impedirá a consolidação!**")
+    st.info("💡 **Dica**: Revise cuidadosamente sua planilha antes de enviar. Todas as datas devem estar corretas.")
     
     # Nova estrutura de pastas
     with st.expander("📁 Nova Estrutura de Pastas - v2.2.0", expanded=False):
@@ -1498,8 +1574,8 @@ def main():
         else:
             st.success("✅ Nenhuma coluna com valores nulos.")
 
-        # NOVA VALIDAÇÃO MELHORADA
-        st.subheader("🔍 Validações Detalhadas")
+        # NOVA VALIDAÇÃO SUPER RIGOROSA v2.2.3
+        st.subheader("🔍 Validações Super Rigorosas")
         erros, avisos, linhas_invalidas_detalhes = validar_dados_enviados(df)
         
         # Mostrar avisos
@@ -1513,10 +1589,28 @@ def main():
         if linhas_invalidas_detalhes:
             exibir_relatorio_problemas_datas(linhas_invalidas_detalhes)
         
-        # Mostrar erros
+        # Mostrar erros - AGORA MAIS PROMINENT
         if erros:
+            st.markdown("## ❌ **PROBLEMAS ENCONTRADOS - CORREÇÃO OBRIGATÓRIA**")
+            
             for erro in erros:
-                st.error(erro)
+                if erro.startswith("❌"):
+                    st.error(erro)
+                elif erro.startswith("🔧"):
+                    st.error(erro)
+                elif erro.startswith("📋"):
+                    st.warning(erro)
+                else:
+                    st.error(erro)
+            
+            # Mensagem final clara
+            st.markdown("---")
+            st.error("🚫 **A consolidação está BLOQUEADA até que todos os problemas sejam corrigidos!**")
+            st.info("💡 **Próximos passos:**")
+            st.info("1. ✏️ Abra sua planilha Excel")
+            st.info("2. 🔧 Corrija TODOS os problemas listados acima")
+            st.info("3. 💾 Salve o arquivo")
+            st.info("4. 🔄 Faça o upload novamente")
 
         # Botão de envio com verificação de lock
         col1, col2 = st.columns([1, 4])
@@ -1529,10 +1623,15 @@ def main():
                 if st.button("🔄 Atualizar Página"):
                     st.rerun()
             else:
-                if st.button("📧 Consolidar Dados", type="primary", disabled=bool(erros)):
-                    if erros:
-                        st.error("❌ Corrija os erros acima antes de prosseguir")
-                    else:
+                # Botão desabilitado se houver QUALQUER erro
+                botao_desabilitado = bool(erros)
+                
+                if botao_desabilitado:
+                    st.button("❌ Consolidar Dados", type="primary", disabled=True, 
+                             help="Corrija todos os problemas antes de prosseguir")
+                    st.caption("🔒 Botão bloqueado - há problemas na planilha")
+                else:
+                    if st.button("✅ Consolidar Dados", type="primary"):
                         # Usar a nova função com lock
                         sucesso = processar_consolidacao_com_lock(df, uploaded_file.name, token)
                         if sucesso:
@@ -1554,7 +1653,7 @@ def main():
             • Uma coluna <strong>'RESPONSÁVEL'</strong><br>
             • Colunas: <strong>TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP</strong><br>
             <br>
-            📁 <strong>v2.2.1:</strong> Sistema de lock implementado - apenas 1 usuário por vez<br>
+            🔒 <strong>v2.2.3:</strong> Validação super rigorosa - QUALQUER problema de data impede consolidação<br>
             <small>Última atualização: {VERSION_DATE}</small>
         </div>
         """,
