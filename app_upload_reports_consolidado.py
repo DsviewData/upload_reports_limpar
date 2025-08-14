@@ -1386,56 +1386,55 @@ def main():
         st.divider()
         st.markdown("### 🚀 **Consolidar Dados**")
         
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            sistema_ocupado_agora, _ = verificar_lock_existente(token)
+        # Verificar novamente se sistema está livre antes de permitir envio
+        sistema_ocupado_agora, _ = verificar_lock_existente(token)
+        
+        if sistema_ocupado_agora:
+            st.error("🔒 Sistema foi bloqueado por outro usuário")
+            if st.button("🔄 Atualizar Página"):
+                st.rerun()
+        else:
+            # Botão desabilitado se houver QUALQUER erro
+            botao_desabilitado = bool(erros)
             
-            if sistema_ocupado_agora:
-                st.error("🔒 Sistema foi bloqueado por outro usuário")
-                if st.button("🔄 Atualizar Página"):
-                    st.rerun()
-            else:
-                botao_desabilitado = bool(erros)
-                
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
                 if botao_desabilitado:
                     st.button("❌ Consolidar Dados", type="primary", disabled=True, 
                              help="Corrija todos os problemas antes de prosseguir")
                     st.caption("🔒 Botão bloqueado - há problemas na planilha")
                 else:
-                    if st.button("✅ Consolidar Dados", type="primary", help="Clique para iniciar a consolidação"):
+                    # Botão principal sem confirmação dupla
+                    if st.button("✅ **Consolidar Dados**", type="primary", 
+                                help="Inicia a consolidação imediatamente"):
                         
-                        with st.expander("⚠️ **CONFIRMAÇÃO FINAL**", expanded=True):
-                            st.warning("**Você está prestes a consolidar os dados. Esta ação irá:**")
-                            st.info("• 📊 Analisar os dados enviados")
-                            st.info("• 🔄 Substituir dados existentes com mesma data e responsável")
-                            st.info("• ➕ Adicionar novos dados")
-                            st.info("• 💾 Criar backups automáticos")
-                            st.info("• 🔒 Bloquear sistema durante o processo")
-                            
-                            col_confirma, col_cancela = st.columns(2)
-                            
-                            with col_confirma:
-                                if st.button("🎯 **CONFIRMAR CONSOLIDAÇÃO**", type="primary"):
-                                    st.info("🚀 **Iniciando consolidação...**")
-                                    st.warning("⏳ **Aguarde o término do processo. NÃO feche esta página!**")
-                                    
-                                    sucesso = processar_consolidacao_com_lock(df, uploaded_file.name, token)
-                                    
-                                    if sucesso:
-                                        st.balloons()
-                                        st.success("🎉 **CONSOLIDAÇÃO FINALIZADA COM SUCESSO!**")
-                                        st.info("💡 Você pode enviar uma nova planilha ou fechar esta página")
-                                    else:
-                                        st.error("❌ **Falha na consolidação. Tente novamente.**")
-                            
-                            with col_cancela:
-                                if st.button("❌ Cancelar", type="secondary"):
-                                    st.info("🔄 Consolidação cancelada. Você pode fazer ajustes na planilha se necessário.")
-                                    st.rerun()
+                        # Aviso importante antes de iniciar
+                        st.warning("⏳ **Consolidação iniciada! Aguarde o término do processo. NÃO feche esta página!**")
                         
-        with col2:
-            if st.button("🔄 Limpar Tela", type="secondary"):
-                st.rerun()
+                        # Iniciar consolidação diretamente
+                        sucesso = processar_consolidacao_com_lock(df, uploaded_file.name, token)
+                        
+                        if sucesso:
+                            st.balloons()
+                            st.success("🎉 **CONSOLIDAÇÃO FINALIZADA COM SUCESSO!**")
+                            st.info("💡 Você pode enviar uma nova planilha ou fechar esta página")
+                        else:
+                            st.error("❌ **Falha na consolidação. Tente novamente.**")
+            
+            with col2:
+                if st.button("🔄 Limpar Tela", type="secondary"):
+                    st.rerun()
+                    
+        # Informações sobre o que a consolidação fará
+        with st.expander("ℹ️ O que acontecerá durante a consolidação?", expanded=False):
+            st.info("**📊 Análise dos dados enviados**")
+            st.info("**🔄 Substituição de dados existentes** (mesma data + responsável)")
+            st.info("**➕ Adição de novos dados** (combinações inexistentes)")
+            st.info("**💾 Criação de backups automáticos** dos dados substituídos")
+            st.info("**🔒 Bloqueio temporário do sistema** durante o processo")
+            st.info("**🛡️ Verificação de segurança** antes de salvar")
+            st.info("**📈 Relatório completo** das operações realizadas")
 
     st.divider()
     st.markdown(
