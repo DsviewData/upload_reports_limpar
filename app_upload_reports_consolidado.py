@@ -12,17 +12,30 @@ import uuid
 import time
 
 # ===========================
-# CONFIGURAÇÕES DE VERSÃO - ATUALIZADO v2.2.4
+# CONFIGURAÇÕES DE VERSÃO - ATUALIZADO v2.3.0
 # ===========================
-APP_VERSION = "2.2.4"
-VERSION_DATE = "2025-08-14"
+APP_VERSION = "2.3.0"
+VERSION_DATE = "2025-08-20"
 CHANGELOG = {
+    "2.3.0": {
+        "date": "2025-08-20",
+        "changes": [
+            "🎯 CORREÇÃO CRÍTICA: Lógica de consolidação por MÊS/ANO",
+            "🔧 Resolve problema de alteração de datas criando duplicatas",
+            "📅 Consolidação agora agrupa por RESPONSÁVEL + PERÍODO MENSAL",
+            "🛡️ Verificação de segurança aprimorada para períodos",
+            "📊 Análise pré-consolidação atualizada para mês/ano",
+            "🔍 Logs detalhados por período mensal",
+            "⚡ Performance melhorada no agrupamento",
+            "✅ Eliminação definitiva de inconsistências temporais"
+        ]
+    },
     "2.2.4": {
         "date": "2025-08-14",
         "changes": [
             "🔧 CORREÇÃO CRÍTICA: Lógica de consolidação reescrita",
             "🛡️ Sistema de verificação de segurança implementado",
-            "🔍 Logs detalhados para monitoramento de consolidação",
+            "📝 Logs detalhados para monitoramento de consolidação",
             "📊 Análise pré-consolidação com previsão de impacto",
             "⚡ Feedback visual melhorado durante processo",
             "🚨 Alertas claros antes e durante consolidação",
@@ -436,7 +449,7 @@ def exibir_relatorio_problemas_datas(problemas_datas):
         st.success("✅ **Todas as datas estão válidas e consistentes!**")
         return
     
-    st.error(f"⚠ **ATENÇÃO: {len(problemas_datas)} problemas encontrados nas datas**")
+    st.error(f"⚠️ **ATENÇÃO: {len(problemas_datas)} problemas encontrados nas datas**")
     
     df_problemas = pd.DataFrame(problemas_datas)
     
@@ -574,7 +587,7 @@ def validar_dados_enviados(df):
     return erros, avisos, linhas_invalidas_detalhes
 
 # ===========================
-# FUNÇÕES DE CONSOLIDAÇÃO CORRIGIDAS
+# FUNÇÕES DE CONSOLIDAÇÃO CORRIGIDAS v2.3.0
 # ===========================
 def baixar_arquivo_consolidado(token):
     """Baixa o arquivo consolidado existente"""
@@ -603,18 +616,19 @@ def baixar_arquivo_consolidado(token):
         logger.error(f"Erro ao baixar arquivo consolidado: {e}")
         return pd.DataFrame(), False
 
-def verificar_seguranca_consolidacao(df_consolidado, df_novo, df_final):
-    """Verificação de segurança crítica"""
+def verificar_seguranca_consolidacao_v2(df_consolidado, df_novo, df_final):
+    """Verificação de segurança crítica - versão corrigida para mês/ano"""
     try:
         responsaveis_antes = set(df_consolidado['RESPONSÁVEL'].dropna().astype(str).str.strip().str.upper().unique()) if not df_consolidado.empty else set()
         responsaveis_novos = set(df_novo['RESPONSÁVEL'].dropna().astype(str).str.strip().str.upper().unique())
         responsaveis_depois = set(df_final['RESPONSÁVEL'].dropna().astype(str).str.strip().str.upper().unique())
         
-        logger.info(f"🛡️ VERIFICAÇÃO DE SEGURANÇA:")
+        logger.info(f"🛡️ VERIFICAÇÃO DE SEGURANÇA v2.3.0:")
         logger.info(f"   Responsáveis ANTES: {responsaveis_antes}")
         logger.info(f"   Responsáveis NOVOS: {responsaveis_novos}")
         logger.info(f"   Responsáveis DEPOIS: {responsaveis_depois}")
         
+        # Verificar se algum responsável foi perdido completamente
         responsaveis_esperados = responsaveis_antes.union(responsaveis_novos)
         responsaveis_perdidos = responsaveis_esperados - responsaveis_depois
         
@@ -623,12 +637,50 @@ def verificar_seguranca_consolidacao(df_consolidado, df_novo, df_final):
             logger.error(f"❌ ERRO CRÍTICO: {error_msg}")
             return False, error_msg
         
+        # Verificação adicional: responsáveis que não estão sendo atualizados não devem desaparecer
         for resp in responsaveis_antes:
             if resp not in responsaveis_novos:
                 if resp not in responsaveis_depois:
                     error_msg = f"Responsável '{resp}' foi removido sem justificativa"
                     logger.error(f"❌ ERRO: {error_msg}")
                     return False, error_msg
+        
+        # Verificação de períodos: garantir que não perdemos dados de períodos não afetados
+        if not df_consolidado.empty and not df_novo.empty:
+            df_consolidado_temp = df_consolidado.copy()
+            df_consolidado_temp['mes_ano'] = df_consolidado_temp['DATA'].dt.to_period('M')
+            
+            df_novo_temp = df_novo.copy()
+            df_novo_temp['mes_ano'] = df_novo_temp['DATA'].dt.to_period('M')
+            
+            df_final_temp = df_final.copy()
+            df_final_temp['mes_ano'] = df_final_temp['DATA'].dt.to_period('M')
+            
+            # Períodos que estão sendo atualizados
+            periodos_atualizados = set()
+            for responsavel in responsaveis_novos:
+                periodos_resp = df_novo_temp[
+                    df_novo_temp['RESPONSÁVEL'].astype(str).str.strip().str.upper() == responsavel
+                ]['mes_ano'].unique()
+                for periodo in periodos_resp:
+                    periodos_atualizados.add((responsavel, periodo))
+            
+            # Verificar se períodos não atualizados foram preservados
+            for responsavel in responsaveis_antes:
+                if responsavel not in responsaveis_novos:
+                    # Este responsável não está sendo atualizado, deve manter todos os períodos
+                    periodos_antes = df_consolidado_temp[
+                        df_consolidado_temp['RESPONSÁVEL'].astype(str).str.strip().str.upper() == responsavel
+                    ]['mes_ano'].unique()
+                    
+                    periodos_depois = df_final_temp[
+                        df_final_temp['RESPONSÁVEL'].astype(str).str.strip().str.upper() == responsavel
+                    ]['mes_ano'].unique()
+                    
+                    if len(periodos_antes) != len(periodos_depois):
+                        error_msg = f"Períodos perdidos para responsável '{responsavel}': antes={len(periodos_antes)}, depois={len(periodos_depois)}"
+                        logger.error(f"❌ ERRO: {error_msg}")
+                        return False, error_msg
         
         logger.info(f"✅ VERIFICAÇÃO DE SEGURANÇA PASSOU!")
         logger.info(f"   Total antes: {len(responsaveis_antes)} responsáveis")
@@ -642,8 +694,11 @@ def verificar_seguranca_consolidacao(df_consolidado, df_novo, df_final):
         logger.error(f"❌ {error_msg}")
         return False, error_msg
 
-def comparar_e_atualizar_registros(df_consolidado, df_novo):
-    """Lógica de consolidação corrigida - v2.2.4"""
+def comparar_e_atualizar_registros_v2(df_consolidado, df_novo):
+    """
+    Lógica de consolidação corrigida - v2.3.0
+    Consolida por RESPONSÁVEL + MÊS/ANO para evitar problemas com alterações de data
+    """
     registros_inseridos = 0
     registros_substituidos = 0
     registros_removidos = 0
@@ -651,7 +706,7 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo):
     combinacoes_novas = 0
     combinacoes_existentes = 0
     
-    logger.info(f"🔧 INICIANDO CONSOLIDAÇÃO:")
+    logger.info(f"🔧 INICIANDO CONSOLIDAÇÃO v2.3.0:")
     logger.info(f"   Consolidado atual: {len(df_consolidado)} registros")
     logger.info(f"   Novo arquivo: {len(df_novo)} registros")
     
@@ -659,7 +714,10 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo):
         df_final = df_novo.copy()
         registros_inseridos = len(df_novo)
         
-        combinacoes_unicas = df_novo.groupby(['RESPONSÁVEL', df_novo['DATA'].dt.date]).size()
+        # Criar combinações únicas por mês/ano
+        df_temp = df_novo.copy()
+        df_temp['mes_ano'] = df_temp['DATA'].dt.to_period('M')
+        combinacoes_unicas = df_temp.groupby(['RESPONSÁVEL', 'mes_ano']).size()
         combinacoes_novas = len(combinacoes_unicas)
         
         logger.info(f"✅ PRIMEIRA CONSOLIDAÇÃO: {registros_inseridos} registros inseridos")
@@ -668,6 +726,7 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo):
             detalhes_operacao.append({
                 "Operação": "INSERIDO",
                 "Responsável": row["RESPONSÁVEL"],
+                "Mês/Ano": row["DATA"].strftime("%m/%Y"),
                 "Data": row["DATA"].strftime("%d/%m/%Y"),
                 "Motivo": "Primeira consolidação - arquivo vazio"
             })
@@ -685,28 +744,35 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo):
     df_final = df_consolidado.copy()
     registros_inicial = len(df_final)
     
-    logger.info(f"🔍 Estado inicial do consolidado:")
+    # Adicionar colunas auxiliares para agrupamento por mês/ano
+    df_novo_temp = df_novo.copy()
+    df_novo_temp['mes_ano'] = df_novo_temp['DATA'].dt.to_period('M')
+    
+    df_final_temp = df_final.copy()
+    df_final_temp['mes_ano'] = df_final_temp['DATA'].dt.to_period('M')
+    
+    logger.info(f"📋 Estado inicial do consolidado:")
     if not df_final.empty:
         responsaveis_iniciais = df_final['RESPONSÁVEL'].dropna().unique()
         logger.info(f"   Responsáveis: {responsaveis_iniciais}")
         logger.info(f"   Total de registros: {len(df_final)}")
     
-    # Agrupar registros novos por RESPONSÁVEL e DATA
-    grupos_novos = df_novo.groupby(['RESPONSÁVEL', df_novo['DATA'].dt.date])
+    # Agrupar registros novos por RESPONSÁVEL e MÊS/ANO
+    grupos_novos = df_novo_temp.groupby(['RESPONSÁVEL', 'mes_ano'])
     
-    logger.info(f"📊 Processando {len(grupos_novos)} combinações únicas de Responsável+Data")
+    logger.info(f"📊 Processando {len(grupos_novos)} combinações únicas de Responsável+Mês/Ano")
     
-    for (responsavel, data_grupo), grupo_df in grupos_novos:
+    for (responsavel, periodo_grupo), grupo_df in grupos_novos:
         if pd.isna(responsavel) or str(responsavel).strip() == '':
             logger.warning(f"⚠️ Pulando responsável inválido: {responsavel}")
             continue
         
-        logger.info(f"🔍 Processando: '{responsavel}' em {data_grupo} ({len(grupo_df)} registros)")
+        logger.info(f"🔍 Processando: '{responsavel}' em {periodo_grupo} ({len(grupo_df)} registros)")
         
-        # Buscar registros existentes APENAS para este responsável e data ESPECÍFICOS
+        # Buscar registros existentes APENAS para este responsável e período ESPECÍFICOS
         mask_existente = (
-            (df_final["DATA"].dt.date == data_grupo) &
-            (df_final["RESPONSÁVEL"].astype(str).str.strip().str.upper() == str(responsavel).strip().upper())
+            (df_final_temp["mes_ano"] == periodo_grupo) &
+            (df_final_temp["RESPONSÁVEL"].astype(str).str.strip().str.upper() == str(responsavel).strip().upper())
         )
         
         registros_existentes = df_final[mask_existente]
@@ -715,13 +781,16 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo):
         logger.info(f"   📋 Encontrados {len(registros_existentes)} registros existentes para esta combinação")
         
         if not registros_existentes.empty:
-            # SUBSTITUIÇÃO APENAS DA COMBINAÇÃO ESPECÍFICA
+            # SUBSTITUIÇÃO APENAS DA COMBINAÇÃO ESPECÍFICA (RESPONSÁVEL + MÊS/ANO)
             num_removidos = len(registros_existentes)
             
-            logger.info(f"   🔄 SUBSTITUIÇÃO: Removendo {num_removidos} registros antigos")
+            logger.info(f"   🔄 SUBSTITUIÇÃO: Removendo {num_removidos} registros antigos do período {periodo_grupo}")
             
             # Remove APENAS os registros dessa combinação específica
             df_final = df_final[~mask_existente]
+            
+            # Atualizar df_final_temp também
+            df_final_temp = df_final_temp[~mask_existente]
             
             total_depois_remocao = len(df_final)
             registros_removidos += num_removidos
@@ -737,17 +806,18 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo):
             detalhes_operacao.append({
                 "Operação": "REMOVIDO",
                 "Responsável": responsavel,
-                "Data": data_grupo.strftime("%d/%m/%Y"),
+                "Mês/Ano": periodo_grupo.strftime("%m/%Y"),
+                "Data": f"Todo o período {periodo_grupo}",
                 "Motivo": f"Substituição: {num_removidos} registro(s) antigo(s) removido(s)"
             })
             
             registros_substituidos += len(grupo_df)
             operacao_tipo = "SUBSTITUÍDO"
-            motivo = f"Substituição completa: {len(grupo_df)} novo(s) registro(s)"
+            motivo = f"Substituição completa do período: {len(grupo_df)} novo(s) registro(s)"
             
         else:
             # INSERÇÃO DE NOVOS DADOS
-            logger.info(f"   ➕ NOVA COMBINAÇÃO: Adicionando {len(grupo_df)} registros")
+            logger.info(f"   ➕ NOVA COMBINAÇÃO: Adicionando {len(grupo_df)} registros para {periodo_grupo}")
             registros_inseridos += len(grupo_df)
             combinacoes_novas += 1
             operacao_tipo = "INSERIDO"
@@ -755,7 +825,14 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo):
         
         # Inserir novos registros (tanto para inserção quanto substituição)
         total_antes_insercao = len(df_final)
-        df_final = pd.concat([df_final, grupo_df], ignore_index=True)
+        
+        # Remover coluna auxiliar antes de concatenar
+        grupo_para_inserir = grupo_df.drop(columns=['mes_ano'], errors='ignore')
+        df_final = pd.concat([df_final, grupo_para_inserir], ignore_index=True)
+        
+        # Atualizar df_final_temp também
+        df_final_temp = pd.concat([df_final_temp, grupo_df], ignore_index=True)
+        
         total_depois_insercao = len(df_final)
         
         logger.info(f"   ✅ Inseridos {len(grupo_df)} registros. Total: {total_antes_insercao} -> {total_depois_insercao}")
@@ -764,7 +841,8 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo):
         detalhes_operacao.append({
             "Operação": operacao_tipo,
             "Responsável": responsavel,
-            "Data": data_grupo.strftime("%d/%m/%Y"),
+            "Mês/Ano": periodo_grupo.strftime("%m/%Y"),
+            "Data": f"{grupo_df['DATA'].min().strftime('%d/%m/%Y')} até {grupo_df['DATA'].max().strftime('%d/%m/%Y')}",
             "Motivo": motivo
         })
     
@@ -782,17 +860,22 @@ def comparar_e_atualizar_registros(df_consolidado, df_novo):
     
     return df_final, registros_inseridos, registros_substituidos, registros_removidos, detalhes_operacao, combinacoes_novas, combinacoes_existentes
 
-def analise_pre_consolidacao(df_consolidado, df_novo):
-    """Análise pré-consolidação"""
+def analise_pre_consolidacao_v2(df_consolidado, df_novo):
+    """
+    Análise pré-consolidação corrigida para trabalhar com mês/ano
+    """
     try:
         responsaveis_no_envio = df_novo["RESPONSÁVEL"].dropna().unique()
         periodo_min = df_novo["DATA"].min().strftime("%d/%m/%Y")
         periodo_max = df_novo["DATA"].max().strftime("%d/%m/%Y")
         
-        combinacoes_envio = df_novo.groupby(['RESPONSÁVEL', df_novo['DATA'].dt.date]).size()
+        # Criar combinações por mês/ano
+        df_novo_temp = df_novo.copy()
+        df_novo_temp['mes_ano'] = df_novo_temp['DATA'].dt.to_period('M')
+        combinacoes_envio = df_novo_temp.groupby(['RESPONSÁVEL', 'mes_ano']).size()
         total_combinacoes = len(combinacoes_envio)
         
-        st.markdown("### 🔍 **Análise Pré-Consolidação**")
+        st.markdown("### 🔍 **Análise Pré-Consolidação (Por Mês/Ano)**")
         
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -800,31 +883,37 @@ def analise_pre_consolidacao(df_consolidado, df_novo):
         with col2:
             st.info(f"📅 **Período:**\n{periodo_min} até {periodo_max}")
         with col3:
-            st.info(f"📊 **Combinações únicas:**\n{total_combinacoes} (Responsável + Data)")
+            st.info(f"📊 **Combinações únicas:**\n{total_combinacoes} (Responsável + Mês/Ano)")
         
         if not df_consolidado.empty:
+            # Criar coluna auxiliar para o consolidado
+            df_consolidado_temp = df_consolidado.copy()
+            df_consolidado_temp['mes_ano'] = df_consolidado_temp['DATA'].dt.to_period('M')
+            
             registros_para_consolidar = 0
             registros_para_alterar = 0
             registros_que_serao_removidos = 0
+            periodos_afetados = []
             
             for responsavel in responsaveis_no_envio:
-                datas_envio = df_novo[df_novo["RESPONSÁVEL"] == responsavel]["DATA"].dt.date.unique()
+                periodos_envio = df_novo_temp[df_novo_temp["RESPONSÁVEL"] == responsavel]["mes_ano"].unique()
                 
-                for data in datas_envio:
+                for periodo in periodos_envio:
                     mask_conflito = (
-                        (df_consolidado["DATA"].dt.date == data) &
-                        (df_consolidado["RESPONSÁVEL"].astype(str).str.strip().str.upper() == str(responsavel).strip().upper())
+                        (df_consolidado_temp["mes_ano"] == periodo) &
+                        (df_consolidado_temp["RESPONSÁVEL"].astype(str).str.strip().str.upper() == str(responsavel).strip().upper())
                     )
                     
-                    registros_envio = len(df_novo[
-                        (df_novo["RESPONSÁVEL"] == responsavel) & 
-                        (df_novo["DATA"].dt.date == data)
+                    registros_envio = len(df_novo_temp[
+                        (df_novo_temp["RESPONSÁVEL"] == responsavel) & 
+                        (df_novo_temp["mes_ano"] == periodo)
                     ])
                     
                     if mask_conflito.any():
                         registros_existentes = mask_conflito.sum()
                         registros_que_serao_removidos += registros_existentes
                         registros_para_alterar += registros_envio
+                        periodos_afetados.append(f"{responsavel} - {periodo}")
                     else:
                         registros_para_consolidar += registros_envio
             
@@ -844,26 +933,34 @@ def analise_pre_consolidacao(df_consolidado, df_novo):
             with col4:
                 st.metric("🎯 Total Esperado", f"{total_esperado:,}")
             
+            if periodos_afetados:
+                st.warning("⚠️ **Períodos que serão substituídos:**")
+                for periodo in periodos_afetados[:10]:  # Mostrar apenas os primeiros 10
+                    st.caption(f"🔄 {periodo}")
+                if len(periodos_afetados) > 10:
+                    st.caption(f"... e mais {len(periodos_afetados) - 10} períodos")
+            
             if registros_para_consolidar > 0 and registros_para_alterar == 0:
                 st.success(f"✅ **{registros_para_consolidar} registro(s) serão CONSOLIDADOS** (dados novos)")
-                st.info("ℹ️ Nenhum registro existente será alterado")
+                st.info("ℹ️ Nenhum período existente será alterado")
                 
             elif registros_para_alterar > 0 and registros_para_consolidar == 0:
-                st.warning(f"🔄 **{registros_para_alterar} registro(s) serão ALTERADOS** (substituindo dados existentes)")
-                st.info("ℹ️ Nenhum registro novo será adicionado")
+                st.warning(f"🔄 **{registros_para_alterar} registro(s) serão ALTERADOS** (substituindo períodos existentes)")
+                st.info("ℹ️ Nenhum período novo será adicionado")
                 
             elif registros_para_consolidar > 0 and registros_para_alterar > 0:
                 col1, col2 = st.columns(2)
                 with col1:
                     st.success(f"✅ **{registros_para_consolidar} registro(s) serão CONSOLIDADOS**")
-                    st.caption("(dados completamente novos)")
+                    st.caption("(períodos completamente novos)")
                 with col2:
                     st.warning(f"🔄 **{registros_para_alterar} registro(s) serão ALTERADOS**")
-                    st.caption("(substituindo dados existentes)")
+                    st.caption("(substituindo períodos existentes)")
             
             if registros_que_serao_removidos > 0:
                 st.warning(f"⚠️ **{registros_que_serao_removidos} registros existentes serão substituídos** pelos novos dados")
                 st.info("💾 Um backup automático será criado dos dados substituídos")
+                st.info("🗓️ **IMPORTANTE:** A substituição é feita por **RESPONSÁVEL + MÊS/ANO** completo")
         else:
             st.success(f"✅ **{len(df_novo)} registro(s) serão CONSOLIDADOS** (primeira consolidação)")
             
@@ -901,14 +998,14 @@ def salvar_arquivo_enviado(df, nome_arquivo_original, token):
         logger.error(f"Erro ao salvar arquivo enviado: {e}")
 
 def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
-    """Consolidação com sistema de lock e feedback melhorado"""
+    """Consolidação com sistema de lock e feedback melhorado - v2.3.0"""
     session_id = gerar_id_sessao()
     
     status_container = st.empty()
     progress_container = st.empty()
     
     try:
-        status_container.info("🔄 **Iniciando processo de consolidação...**")
+        status_container.info("📄 **Iniciando processo de consolidação v2.3.0...**")
         
         sistema_ocupado, lock_data = verificar_lock_existente(token)
         if sistema_ocupado:
@@ -918,7 +1015,7 @@ def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
         status_container.info("🔒 **Bloqueando sistema para consolidação...**")
         progress_container.progress(10)
         
-        lock_criado, session_lock = criar_lock(token, "Consolidação de planilha")
+        lock_criado, session_lock = criar_lock(token, "Consolidação de planilha v2.3.0")
         
         if not lock_criado:
             status_container.error("❌ Não foi possível bloquear o sistema. Tente novamente.")
@@ -961,7 +1058,7 @@ def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
         progress_container.progress(45)
 
         status_container.info("📊 **Realizando análise pré-consolidação...**")
-        analise_ok = analise_pre_consolidacao(df_consolidado, df_novo)
+        analise_ok = analise_pre_consolidacao_v2(df_consolidado, df_novo)
         
         if not analise_ok:
             status_container.error("❌ **Erro na análise pré-consolidação**")
@@ -970,18 +1067,18 @@ def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
         
         progress_container.progress(55)
 
-        atualizar_status_lock(token, session_lock, "CONSOLIDANDO", f"Processando {len(df_novo)} registros")
-        status_container.info("🔄 **Processando consolidação (lógica corrigida v2.2.4)...**")
+        atualizar_status_lock(token, session_lock, "CONSOLIDANDO", f"Processando {len(df_novo)} registros por mês/ano")
+        status_container.info("🔄 **Processando consolidação (lógica por mês/ano v2.3.0)...**")
         progress_container.progress(65)
         
-        df_final, inseridos, substituidos, removidos, detalhes, novas_combinacoes, combinacoes_existentes = comparar_e_atualizar_registros(
+        df_final, inseridos, substituidos, removidos, detalhes, novas_combinacoes, combinacoes_existentes = comparar_e_atualizar_registros_v2(
             df_consolidado, df_novo
         )
         
         progress_container.progress(75)
 
         status_container.info("🛡️ **Executando verificação de segurança...**")
-        verificacao_ok, msg_verificacao = verificar_seguranca_consolidacao(df_consolidado, df_novo, df_final)
+        verificacao_ok, msg_verificacao = verificar_seguranca_consolidacao_v2(df_consolidado, df_novo, df_final)
         
         if not verificacao_ok:
             status_container.error(f"❌ **ERRO DE SEGURANÇA:** {msg_verificacao}")
@@ -1046,23 +1143,23 @@ def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
                 st.metric("🗑️ Removidos", f"{removidos}")
             
             if novas_combinacoes > 0 or combinacoes_existentes > 0:
-                st.markdown("### 📈 **Análise de Combinações (Responsável + Data)**")
+                st.markdown("### 📈 **Análise de Combinações (Responsável + Mês/Ano)**")
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("🆕 Novas Combinações", novas_combinacoes, 
-                             help="Combinações de Responsável + Data que não existiam antes")
+                    st.metric("🆕 Novos Períodos", novas_combinacoes, 
+                             help="Combinações de Responsável + Mês/Ano que não existiam antes")
                 with col2:
-                    st.metric("🔄 Combinações Atualizadas", combinacoes_existentes,
-                             help="Combinações que já existiam e foram substituídas")
+                    st.metric("🔄 Períodos Atualizados", combinacoes_existentes,
+                             help="Períodos que já existiam e foram substituídos completamente")
                 with col3:
                     total_processadas = novas_combinacoes + combinacoes_existentes
                     st.metric("📊 Total Processado", total_processadas,
-                             help="Total de combinações únicas processadas")
+                             help="Total de períodos mensais processados")
                 
                 if novas_combinacoes > 0:
-                    st.success(f"🎉 **{novas_combinacoes} nova(s) combinação(ões) adicionada(s)** - Dados completamente novos!")
+                    st.success(f"🎉 **{novas_combinacoes} novo(s) período(s) adicionado(s)** - Dados completamente novos!")
                 if combinacoes_existentes > 0:
-                    st.info(f"🔄 **{combinacoes_existentes} combinação(ões) atualizada(s)** - Dados existentes foram substituídos pelos novos!")
+                    st.info(f"🔄 **{combinacoes_existentes} período(s) atualizado(s)** - Dados mensais completamente substituídos!")
             
             if detalhes:
                 with st.expander("📋 Detalhes das Operações", expanded=removidos > 0):
@@ -1123,11 +1220,11 @@ def exibir_info_versao():
         st.info(f"**Versão:** {APP_VERSION}")
         st.info(f"**Data:** {VERSION_DATE}")
         
-        if APP_VERSION == "2.2.4":
-            st.success("🔧 **LÓGICA CONSOLIDAÇÃO CORRIGIDA**")
-            st.caption("Corrigido problema de exclusão indevida")
+        if APP_VERSION == "2.3.0":
+            st.success("🎯 **LÓGICA POR MÊS/ANO**")
+            st.caption("Resolve problema de duplicatas")
         
-        with st.expander("📁 Configuração de Pastas"):
+        with st.expander("📝 Configuração de Pastas"):
             st.markdown("**Arquivo Consolidado:**")
             st.code(PASTA_CONSOLIDADO, language=None)
             st.markdown("**Backups e Envios:**")
@@ -1155,8 +1252,8 @@ def main():
         unsafe_allow_html=True
     )
 
-    if APP_VERSION == "2.2.4":
-        st.success("🔧 **LÓGICA DE CONSOLIDAÇÃO CORRIGIDA** - Problema de exclusão indevida de responsáveis resolvido!")
+    if APP_VERSION == "2.3.0":
+        st.success("🎯 **LÓGICA DE CONSOLIDAÇÃO POR MÊS/ANO** - Problema de duplicatas por alteração de datas resolvido!")
 
     st.sidebar.markdown("### 📤 Upload de Planilhas")
     st.sidebar.markdown("Sistema de consolidação de relatórios")
@@ -1202,28 +1299,33 @@ def main():
     st.warning("📋 **QUALQUER problema de data (vazias, formato inválido, futuras, antigas) impedirá a consolidação!**")
     st.info("💡 **Dica**: Revise cuidadosamente sua planilha antes de enviar. Todas as datas devem estar corretas.")
     
-    with st.expander("🔧 Correções da v2.2.4 - LÓGICA CONSOLIDAÇÃO", expanded=True):
+    with st.expander("🎯 Correções da v2.3.0 - LÓGICA POR MÊS/ANO", expanded=True):
         st.markdown("### 🛡️ **Problemas Corrigidos:**")
         
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("""
             **❌ Problema Anterior:**
-            - Exclusão indevida de responsáveis
-            - Perda de dados durante consolidação
-            - Falta de verificações de segurança
+            - Consolidação por data exata (dia específico)
+            - Alteração de datas criava duplicatas
+            - Inconsistências no mesmo período mensal
+            - Dados duplicados para o mesmo responsável
             """)
             
         with col2:
             st.markdown("""
             **✅ Soluções Implementadas:**
-            - Verificação de segurança obrigatória
-            - Logs detalhados de consolidação
-            - Análise pré-consolidação
-            - Feedback visual em tempo real
+            - Consolidação por RESPONSÁVEL + MÊS/ANO
+            - Substituição completa do período mensal
+            - Verificação de segurança por períodos
+            - Eliminação total de duplicatas temporais
             """)
         
-        st.success("🎯 **Resultado:** Consolidação 100% segura - nenhum dado será perdido inadvertidamente!")
+        st.success("🎯 **Resultado:** Consolidação 100% consistente - alterações de data dentro do mesmo mês substituem todos os registros daquele período!")
+        
+        st.markdown("### 📅 **Como Funciona Agora:**")
+        st.info("Se João tinha dados de 10/03/2024 e você envia dados de 15/03/2024, TODOS os registros de João em março/2024 são substituídos pelos novos dados")
+        st.info("Isso garante que não haverá dados duplicados ou inconsistentes para o mesmo responsável no mesmo mês")
     
     st.divider()
 
@@ -1407,7 +1509,7 @@ def main():
                 else:
                     # Botão principal sem confirmação dupla
                     if st.button("✅ **Consolidar Dados**", type="primary", 
-                                help="Inicia a consolidação imediatamente"):
+                                help="Inicia a consolidação por mês/ano imediatamente"):
                         
                         # Aviso importante antes de iniciar
                         st.warning("⏳ **Consolidação iniciada! Aguarde o término do processo. NÃO feche esta página!**")
@@ -1428,13 +1530,14 @@ def main():
                     
         # Informações sobre o que a consolidação fará
         with st.expander("ℹ️ O que acontecerá durante a consolidação?", expanded=False):
-            st.info("**📊 Análise dos dados enviados**")
-            st.info("**🔄 Substituição de dados existentes** (mesma data + responsável)")
-            st.info("**➕ Adição de novos dados** (combinações inexistentes)")
+            st.info("**📊 Análise dos dados enviados por mês/ano**")
+            st.info("**🔄 Substituição de períodos mensais existentes** (mesmo responsável + mês/ano)")
+            st.info("**➕ Adição de novos períodos** (combinações inexistentes)")
             st.info("**💾 Criação de backups automáticos** dos dados substituídos")
             st.info("**🔒 Bloqueio temporário do sistema** durante o processo")
             st.info("**🛡️ Verificação de segurança** antes de salvar")
             st.info("**📈 Relatório completo** das operações realizadas")
+            st.success("**🎯 NOVO:** Agora a consolidação é feita por **RESPONSÁVEL + MÊS/ANO** - elimina duplicatas!")
 
     st.divider()
     st.markdown(
@@ -1447,7 +1550,7 @@ def main():
             • Uma coluna <strong>'RESPONSÁVEL'</strong><br>
             • Colunas: <strong>TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP</strong><br>
             <br>
-            🔧 <strong>v2.2.4:</strong> Lógica de consolidação corrigida - Verificações de segurança implementadas<br>
+            🎯 <strong>v2.3.0:</strong> Lógica de consolidação por mês/ano - Duplicatas eliminadas<br>
             <small>Última atualização: {VERSION_DATE}</small>
         </div>
         """,
