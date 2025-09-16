@@ -12,11 +12,24 @@ import uuid
 import time
 
 # ===========================
-# CONFIGURAÇÕES DE VERSÃO - ATUALIZADO v2.3.0
+# CONFIGURAÇÕES DE VERSÃO - ATUALIZADO v2.4.0
 # ===========================
-APP_VERSION = "2.3.0"
-VERSION_DATE = "2025-08-20"
+APP_VERSION = "2.4.0"
+VERSION_DATE = "2025-09-16"
 CHANGELOG = {
+    "2.4.0": {
+        "date": "2025-09-16",
+        "changes": [
+            "🎨 VISUAL MELHORADO: Interface moderna e responsiva",
+            "📅 NOVO CAMPO: Data do último envio na planilha",
+            "🎯 CSS organizado e componentes Streamlit otimizados",
+            "📊 Dashboard visual aprimorado com métricas",
+            "🔧 Melhor feedback visual durante processos",
+            "🎨 Tema consistente e cores padronizadas",
+            "📱 Layout responsivo para diferentes telas",
+            "✨ Animações e transições suaves"
+        ]
+    },
     "2.3.0": {
         "date": "2025-08-20",
         "changes": [
@@ -29,21 +42,233 @@ CHANGELOG = {
             "⚡ Performance melhorada no agrupamento",
             "✅ Eliminação definitiva de inconsistências temporais"
         ]
-    },
-    "2.2.4": {
-        "date": "2025-08-14",
-        "changes": [
-            "🔧 CORREÇÃO CRÍTICA: Lógica de consolidação reescrita",
-            "🛡️ Sistema de verificação de segurança implementado",
-            "📝 Logs detalhados para monitoramento de consolidação",
-            "📊 Análise pré-consolidação com previsão de impacto",
-            "⚡ Feedback visual melhorado durante processo",
-            "🚨 Alertas claros antes e durante consolidação",
-            "🎯 Corrigido problema de exclusão indevida de responsáveis",
-            "📈 Métricas em tempo real durante processamento"
-        ]
     }
 }
+
+# ===========================
+# ESTILOS CSS MELHORADOS
+# ===========================
+def aplicar_estilos_css():
+    """Aplica estilos CSS customizados para melhorar a aparência"""
+    st.markdown("""
+    <style>
+    /* Tema principal */
+    :root {
+        --primary-color: #2E8B57;
+        --secondary-color: #20B2AA;
+        --accent-color: #FFD700;
+        --success-color: #32CD32;
+        --warning-color: #FFA500;
+        --error-color: #DC143C;
+        --background-light: #F8F9FA;
+        --text-dark: #2C3E50;
+        --border-color: #E1E8ED;
+    }
+    
+    /* Header principal */
+    .main-header {
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        padding: 2rem;
+        border-radius: 15px;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        color: white;
+    }
+    
+    .main-header h1 {
+        margin: 0;
+        font-size: 2.5rem;
+        font-weight: 700;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    .version-badge {
+        background: rgba(255,255,255,0.2);
+        padding: 0.5rem 1rem;
+        border-radius: 25px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        backdrop-filter: blur(10px);
+    }
+    
+    /* Cards de status */
+    .status-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        border-left: 4px solid var(--primary-color);
+        margin: 1rem 0;
+        transition: transform 0.2s ease;
+    }
+    
+    .status-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+    }
+    
+    .status-card.success {
+        border-left-color: var(--success-color);
+        background: linear-gradient(135deg, #f0fff4, #ffffff);
+    }
+    
+    .status-card.warning {
+        border-left-color: var(--warning-color);
+        background: linear-gradient(135deg, #fffaf0, #ffffff);
+    }
+    
+    .status-card.error {
+        border-left-color: var(--error-color);
+        background: linear-gradient(135deg, #fff0f0, #ffffff);
+    }
+    
+    /* Métricas melhoradas */
+    .metric-container {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 12px;
+        text-align: center;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        border-top: 3px solid var(--primary-color);
+        transition: all 0.3s ease;
+    }
+    
+    .metric-container:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 25px rgba(0,0,0,0.15);
+    }
+    
+    .metric-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: var(--primary-color);
+        margin: 0.5rem 0;
+    }
+    
+    .metric-label {
+        font-size: 0.9rem;
+        color: var(--text-dark);
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    /* Botões melhorados */
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        border: none;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    
+    /* Progress bar customizada */
+    .stProgress > div > div > div > div {
+        background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+        border-radius: 10px;
+    }
+    
+    /* Sidebar melhorada */
+    .css-1d391kg {
+        background: linear-gradient(180deg, var(--background-light), white);
+    }
+    
+    /* Upload area melhorada */
+    .uploadedFile {
+        border: 2px dashed var(--primary-color);
+        border-radius: 12px;
+        padding: 2rem;
+        text-align: center;
+        background: var(--background-light);
+        transition: all 0.3s ease;
+    }
+    
+    .uploadedFile:hover {
+        border-color: var(--secondary-color);
+        background: white;
+    }
+    
+    /* Tabelas melhoradas */
+    .dataframe {
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+    
+    /* Alertas customizados */
+    .custom-alert {
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+        border-left: 4px solid;
+        font-weight: 500;
+    }
+    
+    .custom-alert.info {
+        background: #e3f2fd;
+        border-left-color: #2196f3;
+        color: #0d47a1;
+    }
+    
+    .custom-alert.success {
+        background: #e8f5e8;
+        border-left-color: #4caf50;
+        color: #1b5e20;
+    }
+    
+    .custom-alert.warning {
+        background: #fff3e0;
+        border-left-color: #ff9800;
+        color: #e65100;
+    }
+    
+    .custom-alert.error {
+        background: #ffebee;
+        border-left-color: #f44336;
+        color: #b71c1c;
+    }
+    
+    /* Footer melhorado */
+    .footer {
+        background: var(--background-light);
+        padding: 2rem;
+        border-radius: 12px;
+        text-align: center;
+        margin-top: 3rem;
+        border-top: 3px solid var(--primary-color);
+    }
+    
+    /* Animações */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .fade-in {
+        animation: fadeIn 0.6s ease-out;
+    }
+    
+    /* Responsividade */
+    @media (max-width: 768px) {
+        .main-header h1 {
+            font-size: 2rem;
+        }
+        
+        .metric-value {
+            font-size: 2rem;
+        }
+        
+        .status-card {
+            padding: 1rem;
+        }
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 # ===========================
 # CONFIGURAÇÃO DE LOGGING
@@ -229,45 +454,67 @@ def atualizar_status_lock(token, session_id, novo_status, detalhes=None):
         return False
 
 def exibir_status_sistema(token):
-    """Exibe o status atual do sistema de lock"""
+    """Exibe o status atual do sistema de lock com visual melhorado"""
     lock_existe, lock_data = verificar_lock_existente(token)
     
     if lock_existe:
         timestamp_inicio = datetime.fromisoformat(lock_data['timestamp'])
         duracao = datetime.now() - timestamp_inicio
         
-        if duracao.total_seconds() < 60:
-            cor = "🟡"
-        elif duracao.total_seconds() < 300:
-            cor = "🟠"
-        else:
-            cor = "🔴"
+        # Card de status ocupado
+        st.markdown("""
+        <div class="status-card error">
+            <h3>🔒 Sistema Ocupado</h3>
+            <p>Outro usuário está enviando dados no momento</p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        tempo_limite = timestamp_inicio + timedelta(minutes=TIMEOUT_LOCK_MINUTOS)
-        tempo_restante = tempo_limite - datetime.now()
+        # Métricas do processo
+        col1, col2, col3 = st.columns(3)
         
-        st.error(f"🔒 **Sistema ocupado** - Outro usuário está enviando dados")
+        with col1:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value">{int(duracao.total_seconds()//60)}</div>
+                <div class="metric-label">Minutos Ativo</div>
+            </div>
+            """, unsafe_allow_html=True)
         
+        with col2:
+            tempo_limite = timestamp_inicio + timedelta(minutes=TIMEOUT_LOCK_MINUTOS)
+            tempo_restante = tempo_limite - datetime.now()
+            minutos_restantes = max(0, int(tempo_restante.total_seconds()//60))
+            
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value">{minutos_restantes}</div>
+                <div class="metric-label">Min. Restantes</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            status_display = lock_data.get('status', 'N/A')
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">Status</div>
+                <div style="font-size: 1.2rem; font-weight: 600; color: var(--warning-color);">{status_display}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Detalhes em expander
         with st.expander("ℹ️ Detalhes do processo em andamento"):
             col1, col2 = st.columns(2)
             
             with col1:
                 st.info(f"**Operação:** {lock_data.get('operacao', 'N/A')}")
-                st.info(f"**Status:** {lock_data.get('status', 'N/A')}")
                 st.info(f"**Início:** {timestamp_inicio.strftime('%H:%M:%S')}")
                 
             with col2:
-                st.info(f"{cor} **Duração:** {int(duracao.total_seconds()//60)}min {int(duracao.total_seconds()%60)}s")
-                if tempo_restante.total_seconds() > 0:
-                    st.info(f"⏱️ **Timeout em:** {int(tempo_restante.total_seconds()//60)}min")
-                else:
-                    st.warning("⚠️ **Processo pode ter travado** (será liberado automaticamente)")
-                
-            if 'detalhes' in lock_data:
-                st.info(f"**Detalhes:** {lock_data['detalhes']}")
-                
-            session_id_display = lock_data.get('session_id', 'N/A')[:8]
-            st.caption(f"Session ID: {session_id_display}")
+                if 'detalhes' in lock_data:
+                    st.info(f"**Detalhes:** {lock_data['detalhes']}")
+                    
+                session_id_display = lock_data.get('session_id', 'N/A')[:8]
+                st.caption(f"Session ID: {session_id_display}")
         
         if tempo_restante.total_seconds() < 0:
             if st.button("🆘 Liberar Sistema (Forçar)", type="secondary"):
@@ -279,7 +526,12 @@ def exibir_status_sistema(token):
         
         return True
     else:
-        st.success("✅ **Sistema disponível** - Você pode enviar sua planilha")
+        st.markdown("""
+        <div class="status-card success">
+            <h3>✅ Sistema Disponível</h3>
+            <p>Você pode enviar sua planilha agora</p>
+        </div>
+        """, unsafe_allow_html=True)
         return False
 
 # ===========================
@@ -420,88 +672,97 @@ def validar_datas_detalhadamente(df):
                 elif data_convertida < pd.Timestamp('2020-01-01'):
                     problema_encontrado = f"Data muito antiga: {data_convertida.strftime('%d/%m/%Y')}"
                     tipo_problema = "ANTIGA"
-                elif data_convertida.day > 31 or data_convertida.month > 12:
-                    problema_encontrado = f"Data impossível: dia={data_convertida.day}, mês={data_convertida.month}"
-                    tipo_problema = "IMPOSSÍVEL"
-                elif data_convertida > hoje + pd.Timedelta(days=90):
-                    problema_encontrado = f"Data no futuro (verificar se está correta): {data_convertida.strftime('%d/%m/%Y')}"
+                elif data_convertida > hoje:
+                    problema_encontrado = f"Data no futuro: {data_convertida.strftime('%d/%m/%Y')}"
                     tipo_problema = "FUTURO"
                     
-            except (ValueError, TypeError, pd.errors.OutOfBoundsDatetime, OverflowError):
-                problema_encontrado = f"Formato inválido: '{str(valor_original)}'"
-                tipo_problema = "FORMATO"
+            except (ValueError, TypeError, pd.errors.OutOfBoundsDatetime) as e:
+                if "day is out of range for month" in str(e) or "month must be in 1..12" in str(e):
+                    problema_encontrado = f"Data impossível: {valor_original}"
+                    tipo_problema = "IMPOSSÍVEL"
+                else:
+                    problema_encontrado = f"Formato inválido: {valor_original}"
+                    tipo_problema = "FORMATO"
         
         if problema_encontrado:
             problemas.append({
-                "Linha no Excel": linha_excel,
-                "Data Inválida": str(valor_original)[:50],
-                "Tipo Problema": tipo_problema,
-                "Descrição": problema_encontrado,
-                "Responsável": str(responsavel)[:30]
+                "Linha Excel": linha_excel,
+                "Responsável": responsavel,
+                "Valor Original": valor_original,
+                "Problema": problema_encontrado,
+                "Tipo Problema": tipo_problema
             })
+            
+            logger.warning(f"❌ Linha {linha_excel}: {problema_encontrado} (Responsável: {responsavel})")
     
-    logger.info(f"✅ Validação concluída: {len(problemas)} problemas encontrados")
+    if problemas:
+        logger.error(f"❌ TOTAL DE PROBLEMAS ENCONTRADOS: {len(problemas)}")
+        
+        tipos_problema = {}
+        for problema in problemas:
+            tipo = problema["Tipo Problema"]
+            tipos_problema[tipo] = tipos_problema.get(tipo, 0) + 1
+        
+        logger.error(f"📊 Problemas por tipo: {tipos_problema}")
+    else:
+        logger.info("✅ Todas as datas estão válidas!")
+    
     return problemas
 
-def exibir_relatorio_problemas_datas(problemas_datas):
-    """Exibe relatório visual detalhado dos problemas"""
+def exibir_problemas_datas(problemas_datas):
+    """Exibe problemas de datas com visual melhorado"""
     if not problemas_datas:
-        st.success("✅ **Todas as datas estão válidas e consistentes!**")
         return
     
-    st.error(f"⚠️ **ATENÇÃO: {len(problemas_datas)} problemas encontrados nas datas**")
+    st.markdown("""
+    <div class="custom-alert error">
+        <h4>❌ Problemas de Data Encontrados</h4>
+        <p>É obrigatório corrigir TODOS os problemas antes de enviar</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    df_problemas = pd.DataFrame(problemas_datas)
+    # Estatísticas dos problemas
+    tipos_problema = {}
+    for problema in problemas_datas:
+        tipo = problema["Tipo Problema"]
+        tipos_problema[tipo] = tipos_problema.get(tipo, 0) + 1
     
-    if "Tipo Problema" in df_problemas.columns:
-        tipos_problema = df_problemas.groupby('Tipo Problema').size().sort_values(ascending=False)
-        
-        st.markdown("### 📊 **Resumo dos Problemas:**")
-        
-        cols = st.columns(min(len(tipos_problema), 4))
-        
-        emoji_map = {
-            "VAZIO": "🔴",
-            "FORMATO": "🟠", 
-            "IMPOSSÍVEL": "🟣",
-            "FUTURO": "🟡",
-            "ANTIGA": "🟤",
-            "INCONSISTENTE": "⚫"
-        }
-        
-        for i, (tipo, qtd) in enumerate(tipos_problema.items()):
+    # Exibir métricas dos problemas
+    cols = st.columns(len(tipos_problema))
+    emoji_map = {
+        "VAZIO": "🔴",
+        "FORMATO": "🟠", 
+        "IMPOSSÍVEL": "🟣",
+        "FUTURO": "🟡",
+        "ANTIGA": "🟤"
+    }
+    
+    for i, (tipo, qtd) in enumerate(tipos_problema.items()):
+        with cols[i]:
             emoji = emoji_map.get(tipo, "❌")
-            col_idx = i % len(cols)
-            
-            with cols[col_idx]:
-                st.metric(
-                    label=f"{emoji} {tipo}",
-                    value=f"{qtd} linha{'s' if qtd > 1 else ''}",
-                    help=f"Problemas do tipo {tipo}"
-                )
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value">{qtd}</div>
+                <div class="metric-label">{emoji} {tipo}</div>
+            </div>
+            """, unsafe_allow_html=True)
     
-    st.divider()
-    
-    st.markdown("### 📋 **Detalhes das Linhas com Problemas:**")
-    
-    colunas_exibir = ["Linha no Excel", "Responsável", "Data Inválida", "Descrição"]
+    # Tabela de problemas
+    df_problemas = pd.DataFrame(problemas_datas)
     max_linhas_exibir = 50
     
-    if len(df_problemas) <= max_linhas_exibir:
-        st.dataframe(
-            df_problemas[colunas_exibir], 
-            use_container_width=True, 
-            hide_index=True,
-            height=min(400, len(df_problemas) * 35)
-        )
-    else:
-        st.dataframe(
-            df_problemas.head(max_linhas_exibir)[colunas_exibir], 
-            use_container_width=True, 
-            hide_index=True,
-            height=400
-        )
+    if len(df_problemas) > max_linhas_exibir:
+        df_problemas_exibir = df_problemas.head(max_linhas_exibir)
         st.warning(f"⚠️ **Exibindo apenas as primeiras {max_linhas_exibir} linhas.** Total de problemas: {len(df_problemas)}")
+    else:
+        df_problemas_exibir = df_problemas
+    
+    st.dataframe(
+        df_problemas_exibir,
+        use_container_width=True,
+        hide_index=True,
+        height=400
+    )
 
 def validar_dados_enviados(df):
     """Validação super rigorosa dos dados enviados"""
@@ -538,37 +799,6 @@ def validar_dados_enviados(df):
             erros.append("🔧 É OBRIGATÓRIO corrigir TODOS os problemas antes de enviar")
             erros.append("📋 Revise sua planilha e corrija todas as datas inválidas")
             
-            tipos_problema = {}
-            for problema in problemas_datas:
-                tipo = problema["Tipo Problema"]
-                tipos_problema[tipo] = tipos_problema.get(tipo, 0) + 1
-            
-            detalhes_problemas = []
-            emoji_map = {
-                "VAZIO": "🔴",
-                "FORMATO": "🟠", 
-                "IMPOSSÍVEL": "🟣",
-                "FUTURO": "🟡",
-                "ANTIGA": "🟤"
-            }
-            
-            for tipo, qtd in tipos_problema.items():
-                emoji = emoji_map.get(tipo, "❌")
-                detalhes_problemas.append(f"{emoji} {tipo}: {qtd} linha{'s' if qtd > 1 else ''}")
-            
-            erros.append(f"📊 Problemas por tipo: {', '.join(detalhes_problemas)}")
-            
-            if "VAZIO" in tipos_problema:
-                erros.append("🔴 CRÍTICO: Existem datas em branco - preencha todas as datas")
-            if "FORMATO" in tipos_problema:
-                erros.append("🟠 CRÍTICO: Existem formatos inválidos - use formato DD/MM/AAAA")
-            if "IMPOSSÍVEL" in tipos_problema:
-                erros.append("🟣 CRÍTICO: Existem datas impossíveis - verifique dias e meses")
-            if "FUTURO" in tipos_problema:
-                erros.append("🟡 ATENÇÃO: Existem datas no futuro - confirme se estão corretas")
-            if "ANTIGA" in tipos_problema:
-                erros.append("🟤 ATENÇÃO: Existem datas muito antigas - confirme se estão corretas")
-            
             linhas_invalidas_detalhes = problemas_datas
             
         else:
@@ -587,7 +817,7 @@ def validar_dados_enviados(df):
     return erros, avisos, linhas_invalidas_detalhes
 
 # ===========================
-# FUNÇÕES DE CONSOLIDAÇÃO CORRIGIDAS v2.3.0
+# FUNÇÕES DE CONSOLIDAÇÃO MELHORADAS v2.4.0
 # ===========================
 def baixar_arquivo_consolidado(token):
     """Baixa o arquivo consolidado existente"""
@@ -616,6 +846,30 @@ def baixar_arquivo_consolidado(token):
         logger.error(f"Erro ao baixar arquivo consolidado: {e}")
         return pd.DataFrame(), False
 
+def adicionar_data_ultimo_envio(df_final, responsaveis_atualizados):
+    """Adiciona/atualiza a coluna DATA_ULTIMO_ENVIO para os responsáveis que foram atualizados"""
+    try:
+        # Garantir que a coluna existe
+        if 'DATA_ULTIMO_ENVIO' not in df_final.columns:
+            df_final['DATA_ULTIMO_ENVIO'] = pd.NaT
+            logger.info("➕ Coluna 'DATA_ULTIMO_ENVIO' criada")
+        
+        # Atualizar apenas os responsáveis que foram modificados neste envio
+        data_atual = datetime.now()
+        
+        for responsavel in responsaveis_atualizados:
+            mask = df_final['RESPONSÁVEL'].astype(str).str.strip().str.upper() == str(responsavel).strip().upper()
+            df_final.loc[mask, 'DATA_ULTIMO_ENVIO'] = data_atual
+            
+            registros_atualizados = mask.sum()
+            logger.info(f"📅 Data do último envio atualizada para '{responsavel}': {registros_atualizados} registros")
+        
+        return df_final
+        
+    except Exception as e:
+        logger.error(f"Erro ao adicionar data do último envio: {e}")
+        return df_final
+
 def verificar_seguranca_consolidacao_v2(df_consolidado, df_novo, df_final):
     """Verificação de segurança crítica - versão corrigida para mês/ano"""
     try:
@@ -623,7 +877,7 @@ def verificar_seguranca_consolidacao_v2(df_consolidado, df_novo, df_final):
         responsaveis_novos = set(df_novo['RESPONSÁVEL'].dropna().astype(str).str.strip().str.upper().unique())
         responsaveis_depois = set(df_final['RESPONSÁVEL'].dropna().astype(str).str.strip().str.upper().unique())
         
-        logger.info(f"🛡️ VERIFICAÇÃO DE SEGURANÇA v2.3.0:")
+        logger.info(f"🛡️ VERIFICAÇÃO DE SEGURANÇA v2.4.0:")
         logger.info(f"   Responsáveis ANTES: {responsaveis_antes}")
         logger.info(f"   Responsáveis NOVOS: {responsaveis_novos}")
         logger.info(f"   Responsáveis DEPOIS: {responsaveis_depois}")
@@ -645,43 +899,6 @@ def verificar_seguranca_consolidacao_v2(df_consolidado, df_novo, df_final):
                     logger.error(f"❌ ERRO: {error_msg}")
                     return False, error_msg
         
-        # Verificação de períodos: garantir que não perdemos dados de períodos não afetados
-        if not df_consolidado.empty and not df_novo.empty:
-            df_consolidado_temp = df_consolidado.copy()
-            df_consolidado_temp['mes_ano'] = df_consolidado_temp['DATA'].dt.to_period('M')
-            
-            df_novo_temp = df_novo.copy()
-            df_novo_temp['mes_ano'] = df_novo_temp['DATA'].dt.to_period('M')
-            
-            df_final_temp = df_final.copy()
-            df_final_temp['mes_ano'] = df_final_temp['DATA'].dt.to_period('M')
-            
-            # Períodos que estão sendo atualizados
-            periodos_atualizados = set()
-            for responsavel in responsaveis_novos:
-                periodos_resp = df_novo_temp[
-                    df_novo_temp['RESPONSÁVEL'].astype(str).str.strip().str.upper() == responsavel
-                ]['mes_ano'].unique()
-                for periodo in periodos_resp:
-                    periodos_atualizados.add((responsavel, periodo))
-            
-            # Verificar se períodos não atualizados foram preservados
-            for responsavel in responsaveis_antes:
-                if responsavel not in responsaveis_novos:
-                    # Este responsável não está sendo atualizado, deve manter todos os períodos
-                    periodos_antes = df_consolidado_temp[
-                        df_consolidado_temp['RESPONSÁVEL'].astype(str).str.strip().str.upper() == responsavel
-                    ]['mes_ano'].unique()
-                    
-                    periodos_depois = df_final_temp[
-                        df_final_temp['RESPONSÁVEL'].astype(str).str.strip().str.upper() == responsavel
-                    ]['mes_ano'].unique()
-                    
-                    if len(periodos_antes) != len(periodos_depois):
-                        error_msg = f"Períodos perdidos para responsável '{responsavel}': antes={len(periodos_antes)}, depois={len(periodos_depois)}"
-                        logger.error(f"❌ ERRO: {error_msg}")
-                        return False, error_msg
-        
         logger.info(f"✅ VERIFICAÇÃO DE SEGURANÇA PASSOU!")
         logger.info(f"   Total antes: {len(responsaveis_antes)} responsáveis")
         logger.info(f"   Total novos: {len(responsaveis_novos)} responsáveis") 
@@ -696,7 +913,7 @@ def verificar_seguranca_consolidacao_v2(df_consolidado, df_novo, df_final):
 
 def comparar_e_atualizar_registros_v2(df_consolidado, df_novo):
     """
-    Lógica de consolidação corrigida - v2.3.0
+    Lógica de consolidação corrigida - v2.4.0
     Consolida por RESPONSÁVEL + MÊS/ANO para evitar problemas com alterações de data
     """
     registros_inseridos = 0
@@ -705,14 +922,18 @@ def comparar_e_atualizar_registros_v2(df_consolidado, df_novo):
     detalhes_operacao = []
     combinacoes_novas = 0
     combinacoes_existentes = 0
+    responsaveis_atualizados = set()
     
-    logger.info(f"🔧 INICIANDO CONSOLIDAÇÃO v2.3.0:")
+    logger.info(f"🔧 INICIANDO CONSOLIDAÇÃO v2.4.0:")
     logger.info(f"   Consolidado atual: {len(df_consolidado)} registros")
     logger.info(f"   Novo arquivo: {len(df_novo)} registros")
     
     if df_consolidado.empty:
         df_final = df_novo.copy()
         registros_inseridos = len(df_novo)
+        
+        # Adicionar todos os responsáveis como atualizados
+        responsaveis_atualizados = set(df_novo['RESPONSÁVEL'].dropna().astype(str).str.strip().str.upper().unique())
         
         # Criar combinações únicas por mês/ano
         df_temp = df_novo.copy()
@@ -730,6 +951,9 @@ def comparar_e_atualizar_registros_v2(df_consolidado, df_novo):
                 "Data": row["DATA"].strftime("%d/%m/%Y"),
                 "Motivo": "Primeira consolidação - arquivo vazio"
             })
+        
+        # Adicionar data do último envio
+        df_final = adicionar_data_ultimo_envio(df_final, responsaveis_atualizados)
         
         return df_final, registros_inseridos, registros_substituidos, registros_removidos, detalhes_operacao, combinacoes_novas, combinacoes_existentes
     
@@ -766,6 +990,9 @@ def comparar_e_atualizar_registros_v2(df_consolidado, df_novo):
         if pd.isna(responsavel) or str(responsavel).strip() == '':
             logger.warning(f"⚠️ Pulando responsável inválido: {responsavel}")
             continue
+        
+        # Adicionar responsável à lista de atualizados
+        responsaveis_atualizados.add(str(responsavel).strip().upper())
         
         logger.info(f"🔍 Processando: '{responsavel}' em {periodo_grupo} ({len(grupo_df)} registros)")
         
@@ -842,203 +1069,233 @@ def comparar_e_atualizar_registros_v2(df_consolidado, df_novo):
             "Operação": operacao_tipo,
             "Responsável": responsavel,
             "Mês/Ano": periodo_grupo.strftime("%m/%Y"),
-            "Data": f"{grupo_df['DATA'].min().strftime('%d/%m/%Y')} até {grupo_df['DATA'].max().strftime('%d/%m/%Y')}",
+            "Data": f"Período {periodo_grupo}",
             "Motivo": motivo
         })
     
-    # Log final detalhado
-    logger.info(f"🏁 CONSOLIDAÇÃO FINALIZADA:")
-    logger.info(f"   Total inicial: {registros_inicial}")
-    logger.info(f"   Total final: {len(df_final)}")
-    logger.info(f"   Inseridos: {registros_inseridos}")
-    logger.info(f"   Substituídos: {registros_substituidos}")
-    logger.info(f"   Removidos: {registros_removidos}")
+    # Adicionar data do último envio para os responsáveis atualizados
+    df_final = adicionar_data_ultimo_envio(df_final, responsaveis_atualizados)
     
-    if not df_final.empty:
-        responsaveis_finais = df_final['RESPONSÁVEL'].dropna().unique()
-        logger.info(f"   Responsáveis finais: {responsaveis_finais}")
+    logger.info(f"🎯 CONSOLIDAÇÃO FINALIZADA:")
+    logger.info(f"   Registros inseridos: {registros_inseridos}")
+    logger.info(f"   Registros substituídos: {registros_substituidos}")
+    logger.info(f"   Registros removidos: {registros_removidos}")
+    logger.info(f"   Novas combinações: {combinacoes_novas}")
+    logger.info(f"   Combinações existentes: {combinacoes_existentes}")
+    logger.info(f"   Responsáveis atualizados: {responsaveis_atualizados}")
+    logger.info(f"   Total final: {len(df_final)} registros")
     
     return df_final, registros_inseridos, registros_substituidos, registros_removidos, detalhes_operacao, combinacoes_novas, combinacoes_existentes
 
-def analise_pre_consolidacao_v2(df_consolidado, df_novo):
-    """
-    Análise pré-consolidação corrigida para trabalhar com mês/ano
-    """
+def salvar_arquivo_enviado(df_novo, nome_arquivo_original, token):
+    """Salva uma cópia do arquivo enviado na pasta de backups"""
     try:
-        responsaveis_no_envio = df_novo["RESPONSÁVEL"].dropna().unique()
-        periodo_min = df_novo["DATA"].min().strftime("%d/%m/%Y")
-        periodo_max = df_novo["DATA"].max().strftime("%d/%m/%Y")
+        timestamp = datetime.now().strftime("%Y-%m-%d_%Hh%M")
+        nome_base = nome_arquivo_original.replace(".xlsx", "").replace(".xls", "")
+        nome_arquivo_backup = f"{nome_base}_enviado_{timestamp}.xlsx"
         
-        # Criar combinações por mês/ano
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_novo.to_excel(writer, index=False, sheet_name="Vendas CTs")
+        buffer.seek(0)
+        
+        sucesso, status_code, resposta = upload_onedrive(nome_arquivo_backup, buffer.read(), token, "backup")
+        
+        if sucesso:
+            logger.info(f"💾 Arquivo enviado salvo como backup: {nome_arquivo_backup}")
+        else:
+            logger.warning(f"⚠️ Não foi possível salvar backup do arquivo enviado: {status_code}")
+            
+    except Exception as e:
+        logger.error(f"Erro ao salvar arquivo enviado: {e}")
+
+def analise_pre_consolidacao_v2(df_consolidado, df_novo):
+    """Análise pré-consolidação com visual melhorado"""
+    try:
+        st.markdown("### 📊 Análise Pré-Consolidação")
+        
+        # Preparar dados para análise
         df_novo_temp = df_novo.copy()
         df_novo_temp['mes_ano'] = df_novo_temp['DATA'].dt.to_period('M')
-        combinacoes_envio = df_novo_temp.groupby(['RESPONSÁVEL', 'mes_ano']).size()
-        total_combinacoes = len(combinacoes_envio)
         
-        st.markdown("### 🔍 **Análise Pré-Consolidação (Por Mês/Ano)**")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.info(f"👥 **Responsáveis no envio:**\n{', '.join(responsaveis_no_envio)}")
-        with col2:
-            st.info(f"📅 **Período:**\n{periodo_min} até {periodo_max}")
-        with col3:
-            st.info(f"📊 **Combinações únicas:**\n{total_combinacoes} (Responsável + Mês/Ano)")
+        responsaveis_novos = set(df_novo['RESPONSÁVEL'].dropna().astype(str).str.strip().str.upper().unique())
         
         if not df_consolidado.empty:
-            # Criar coluna auxiliar para o consolidado
             df_consolidado_temp = df_consolidado.copy()
             df_consolidado_temp['mes_ano'] = df_consolidado_temp['DATA'].dt.to_period('M')
-            
-            registros_para_consolidar = 0
-            registros_para_alterar = 0
-            registros_que_serao_removidos = 0
-            periodos_afetados = []
-            
-            for responsavel in responsaveis_no_envio:
-                periodos_envio = df_novo_temp[df_novo_temp["RESPONSÁVEL"] == responsavel]["mes_ano"].unique()
-                
-                for periodo in periodos_envio:
-                    mask_conflito = (
-                        (df_consolidado_temp["mes_ano"] == periodo) &
-                        (df_consolidado_temp["RESPONSÁVEL"].astype(str).str.strip().str.upper() == str(responsavel).strip().upper())
-                    )
-                    
-                    registros_envio = len(df_novo_temp[
-                        (df_novo_temp["RESPONSÁVEL"] == responsavel) & 
-                        (df_novo_temp["mes_ano"] == periodo)
-                    ])
-                    
-                    if mask_conflito.any():
-                        registros_existentes = mask_conflito.sum()
-                        registros_que_serao_removidos += registros_existentes
-                        registros_para_alterar += registros_envio
-                        periodos_afetados.append(f"{responsavel} - {periodo}")
-                    else:
-                        registros_para_consolidar += registros_envio
-            
-            total_atual = len(df_consolidado)
-            total_enviado = len(df_novo)
-            total_esperado = total_atual - registros_que_serao_removidos + total_enviado
-            
-            st.markdown("### 📈 **Impacto da Consolidação**")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("📊 Registros Atuais", f"{total_atual:,}")
-            with col2:
-                st.metric("📤 Registros Enviados", f"{total_enviado:,}")
-            with col3:
-                st.metric("🗑️ Serão Removidos", f"{registros_que_serao_removidos:,}")
-            with col4:
-                st.metric("🎯 Total Esperado", f"{total_esperado:,}")
-            
-            if periodos_afetados:
-                st.warning("⚠️ **Períodos que serão substituídos:**")
-                for periodo in periodos_afetados[:10]:  # Mostrar apenas os primeiros 10
-                    st.caption(f"🔄 {periodo}")
-                if len(periodos_afetados) > 10:
-                    st.caption(f"... e mais {len(periodos_afetados) - 10} períodos")
-            
-            if registros_para_consolidar > 0 and registros_para_alterar == 0:
-                st.success(f"✅ **{registros_para_consolidar} registro(s) serão CONSOLIDADOS** (dados novos)")
-                st.info("ℹ️ Nenhum período existente será alterado")
-                
-            elif registros_para_alterar > 0 and registros_para_consolidar == 0:
-                st.warning(f"🔄 **{registros_para_alterar} registro(s) serão ALTERADOS** (substituindo períodos existentes)")
-                st.info("ℹ️ Nenhum período novo será adicionado")
-                
-            elif registros_para_consolidar > 0 and registros_para_alterar > 0:
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.success(f"✅ **{registros_para_consolidar} registro(s) serão CONSOLIDADOS**")
-                    st.caption("(períodos completamente novos)")
-                with col2:
-                    st.warning(f"🔄 **{registros_para_alterar} registro(s) serão ALTERADOS**")
-                    st.caption("(substituindo períodos existentes)")
-            
-            if registros_que_serao_removidos > 0:
-                st.warning(f"⚠️ **{registros_que_serao_removidos} registros existentes serão substituídos** pelos novos dados")
-                st.info("💾 Um backup automático será criado dos dados substituídos")
-                st.info("🗓️ **IMPORTANTE:** A substituição é feita por **RESPONSÁVEL + MÊS/ANO** completo")
+            responsaveis_existentes = set(df_consolidado['RESPONSÁVEL'].dropna().astype(str).str.strip().str.upper().unique())
         else:
-            st.success(f"✅ **{len(df_novo)} registro(s) serão CONSOLIDADOS** (primeira consolidação)")
+            responsaveis_existentes = set()
+        
+        # Análise de combinações
+        combinacoes_novas = []
+        combinacoes_existentes = []
+        
+        grupos_novos = df_novo_temp.groupby(['RESPONSÁVEL', 'mes_ano'])
+        
+        for (responsavel, periodo), grupo in grupos_novos:
+            if pd.isna(responsavel):
+                continue
+                
+            responsavel_upper = str(responsavel).strip().upper()
             
+            if not df_consolidado.empty:
+                mask_existente = (
+                    (df_consolidado_temp["mes_ano"] == periodo) &
+                    (df_consolidado_temp["RESPONSÁVEL"].astype(str).str.strip().str.upper() == responsavel_upper)
+                )
+                
+                if mask_existente.any():
+                    combinacoes_existentes.append({
+                        "Responsável": responsavel,
+                        "Período": periodo.strftime("%m/%Y"),
+                        "Novos Registros": len(grupo),
+                        "Registros Existentes": mask_existente.sum()
+                    })
+                else:
+                    combinacoes_novas.append({
+                        "Responsável": responsavel,
+                        "Período": periodo.strftime("%m/%Y"),
+                        "Registros": len(grupo)
+                    })
+            else:
+                combinacoes_novas.append({
+                    "Responsável": responsavel,
+                    "Período": periodo.strftime("%m/%Y"),
+                    "Registros": len(grupo)
+                })
+        
+        # Exibir métricas
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value">{len(responsaveis_novos)}</div>
+                <div class="metric-label">Responsáveis</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value">{len(df_novo)}</div>
+                <div class="metric-label">Registros Novos</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value">{len(combinacoes_novas)}</div>
+                <div class="metric-label">Novos Períodos</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value">{len(combinacoes_existentes)}</div>
+                <div class="metric-label">Períodos Atualizados</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Detalhes das operações
+        if combinacoes_novas:
+            with st.expander("➕ Novos Períodos que serão Adicionados"):
+                df_novas = pd.DataFrame(combinacoes_novas)
+                st.dataframe(df_novas, use_container_width=True, hide_index=True)
+        
+        if combinacoes_existentes:
+            with st.expander("🔄 Períodos que serão Substituídos"):
+                df_existentes = pd.DataFrame(combinacoes_existentes)
+                st.dataframe(df_existentes, use_container_width=True, hide_index=True)
+        
         return True
         
     except Exception as e:
-        st.error(f"❌ Erro na análise pré-consolidação: {e}")
         logger.error(f"Erro na análise pré-consolidação: {e}")
+        st.error(f"❌ Erro na análise: {str(e)}")
         return False
 
-def salvar_arquivo_enviado(df, nome_arquivo_original, token):
-    """Salva o arquivo enviado"""
-    try:
-        if not df.empty and "DATA" in df.columns:
-            data_base = df["DATA"].min()
-            nome_pasta = f"Relatorios_Enviados/{data_base.strftime('%Y-%m')}"
-            timestamp = datetime.now().strftime('%d-%m-%Y_%Hh%M')
-            
-            nome_sem_extensao = os.path.splitext(nome_arquivo_original)[0]
-            nome_arquivo = f"{nome_pasta}/{nome_sem_extensao}_{timestamp}_v{APP_VERSION}.xlsx"
-            
-            buffer_envio = BytesIO()
-            with pd.ExcelWriter(buffer_envio, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name="Vendas CTs")
-            buffer_envio.seek(0)
-            
-            sucesso, _, _ = upload_onedrive(nome_arquivo, buffer_envio.read(), token, "enviado")
-            if sucesso:
-                st.info(f"💾 Arquivo salvo como: {PASTA_ENVIOS_BACKUPS}/{nome_arquivo}")
-            else:
-                st.warning("⚠️ Não foi possível salvar cópia do arquivo enviado")
-                
-    except Exception as e:
-        st.warning(f"⚠️ Não foi possível salvar cópia do arquivo: {e}")
-        logger.error(f"Erro ao salvar arquivo enviado: {e}")
-
 def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
-    """Consolidação com sistema de lock e feedback melhorado - v2.3.0"""
+    """Consolidação com sistema de lock e feedback melhorado - v2.4.0"""
     session_id = gerar_id_sessao()
     
     status_container = st.empty()
     progress_container = st.empty()
     
     try:
-        status_container.info("📄 **Iniciando processo de consolidação v2.3.0...**")
+        status_container.markdown("""
+        <div class="custom-alert info">
+            <h4>📄 Iniciando processo de consolidação v2.4.0...</h4>
+        </div>
+        """, unsafe_allow_html=True)
         
         sistema_ocupado, lock_data = verificar_lock_existente(token)
         if sistema_ocupado:
-            status_container.error("🔒 Sistema ocupado! Outro usuário está fazendo consolidação.")
+            status_container.markdown("""
+            <div class="custom-alert error">
+                <h4>🔒 Sistema ocupado! Outro usuário está fazendo consolidação.</h4>
+            </div>
+            """, unsafe_allow_html=True)
             return False
         
-        status_container.info("🔒 **Bloqueando sistema para consolidação...**")
+        status_container.markdown("""
+        <div class="custom-alert info">
+            <h4>🔒 Bloqueando sistema para consolidação...</h4>
+        </div>
+        """, unsafe_allow_html=True)
         progress_container.progress(10)
         
-        lock_criado, session_lock = criar_lock(token, "Consolidação de planilha v2.3.0")
+        lock_criado, session_lock = criar_lock(token, "Consolidação de planilha v2.4.0")
         
         if not lock_criado:
-            status_container.error("❌ Não foi possível bloquear o sistema. Tente novamente.")
+            status_container.markdown("""
+            <div class="custom-alert error">
+                <h4>❌ Não foi possível bloquear o sistema. Tente novamente.</h4>
+            </div>
+            """, unsafe_allow_html=True)
             return False
         
-        status_container.success(f"✅ **Sistema bloqueado com sucesso!** (ID: {session_lock})")
+        status_container.markdown(f"""
+        <div class="custom-alert success">
+            <h4>✅ Sistema bloqueado com sucesso! (ID: {session_lock})</h4>
+        </div>
+        """, unsafe_allow_html=True)
         progress_container.progress(15)
         
         atualizar_status_lock(token, session_lock, "BAIXANDO_ARQUIVO", "Baixando arquivo consolidado")
-        status_container.info("📥 **Baixando arquivo consolidado existente...**")
+        status_container.markdown("""
+        <div class="custom-alert info">
+            <h4>📥 Baixando arquivo consolidado existente...</h4>
+        </div>
+        """, unsafe_allow_html=True)
         progress_container.progress(25)
         
         df_consolidado, arquivo_existe = baixar_arquivo_consolidado(token)
         
         if arquivo_existe:
-            status_container.info(f"📂 **Arquivo consolidado carregado** ({len(df_consolidado):,} registros)")
+            status_container.markdown(f"""
+            <div class="custom-alert info">
+                <h4>📂 Arquivo consolidado carregado ({len(df_consolidado):,} registros)</h4>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            status_container.info("📂 **Criando novo arquivo consolidado**")
+            status_container.markdown("""
+            <div class="custom-alert info">
+                <h4>📂 Criando novo arquivo consolidado</h4>
+            </div>
+            """, unsafe_allow_html=True)
         
         progress_container.progress(35)
 
         atualizar_status_lock(token, session_lock, "PREPARANDO_DADOS", "Validando e preparando dados")
-        status_container.info("🔧 **Preparando e validando dados...**")
+        status_container.markdown("""
+        <div class="custom-alert info">
+            <h4>🔧 Preparando e validando dados...</h4>
+        </div>
+        """, unsafe_allow_html=True)
         
         df_novo = df_novo.copy()
         df_novo.columns = df_novo.columns.str.strip().str.upper()
@@ -1048,27 +1305,47 @@ def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
         df_novo = df_novo.dropna(subset=["DATA"])
 
         if df_novo.empty:
-            status_container.error("❌ **Nenhum registro válido para consolidar**")
+            status_container.markdown("""
+            <div class="custom-alert error">
+                <h4>❌ Nenhum registro válido para consolidar</h4>
+            </div>
+            """, unsafe_allow_html=True)
             remover_lock(token, session_lock)
             return False
 
         if linhas_invalidas > 0:
-            status_container.warning(f"🧹 **{linhas_invalidas} linhas com datas inválidas foram removidas**")
+            status_container.markdown(f"""
+            <div class="custom-alert warning">
+                <h4>🧹 {linhas_invalidas} linhas com datas inválidas foram removidas</h4>
+            </div>
+            """, unsafe_allow_html=True)
 
         progress_container.progress(45)
 
-        status_container.info("📊 **Realizando análise pré-consolidação...**")
+        status_container.markdown("""
+        <div class="custom-alert info">
+            <h4>📊 Realizando análise pré-consolidação...</h4>
+        </div>
+        """, unsafe_allow_html=True)
         analise_ok = analise_pre_consolidacao_v2(df_consolidado, df_novo)
         
         if not analise_ok:
-            status_container.error("❌ **Erro na análise pré-consolidação**")
+            status_container.markdown("""
+            <div class="custom-alert error">
+                <h4>❌ Erro na análise pré-consolidação</h4>
+            </div>
+            """, unsafe_allow_html=True)
             remover_lock(token, session_lock)
             return False
         
         progress_container.progress(55)
 
         atualizar_status_lock(token, session_lock, "CONSOLIDANDO", f"Processando {len(df_novo)} registros por mês/ano")
-        status_container.info("🔄 **Processando consolidação (lógica por mês/ano v2.3.0)...**")
+        status_container.markdown("""
+        <div class="custom-alert info">
+            <h4>🔄 Processando consolidação (lógica por mês/ano v2.4.0)...</h4>
+        </div>
+        """, unsafe_allow_html=True)
         progress_container.progress(65)
         
         df_final, inseridos, substituidos, removidos, detalhes, novas_combinacoes, combinacoes_existentes = comparar_e_atualizar_registros_v2(
@@ -1077,32 +1354,56 @@ def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
         
         progress_container.progress(75)
 
-        status_container.info("🛡️ **Executando verificação de segurança...**")
+        status_container.markdown("""
+        <div class="custom-alert info">
+            <h4>🛡️ Executando verificação de segurança...</h4>
+        </div>
+        """, unsafe_allow_html=True)
         verificacao_ok, msg_verificacao = verificar_seguranca_consolidacao_v2(df_consolidado, df_novo, df_final)
         
         if not verificacao_ok:
-            status_container.error(f"❌ **ERRO DE SEGURANÇA:** {msg_verificacao}")
+            status_container.markdown(f"""
+            <div class="custom-alert error">
+                <h4>❌ ERRO DE SEGURANÇA: {msg_verificacao}</h4>
+            </div>
+            """, unsafe_allow_html=True)
             st.error("🛑 **Consolidação cancelada para proteger os dados!**")
             remover_lock(token, session_lock)
             return False
         else:
-            status_container.success(f"✅ **Verificação de segurança passou:** {msg_verificacao}")
+            status_container.markdown(f"""
+            <div class="custom-alert success">
+                <h4>✅ Verificação de segurança passou: {msg_verificacao}</h4>
+            </div>
+            """, unsafe_allow_html=True)
 
         df_final = df_final.sort_values(["DATA", "RESPONSÁVEL"], na_position='last').reset_index(drop=True)
         progress_container.progress(80)
         
         if removidos > 0:
             atualizar_status_lock(token, session_lock, "CRIANDO_BACKUP", f"Backup de {removidos} registros substituídos")
-            status_container.info("💾 **Criando backup dos dados substituídos...**")
+            status_container.markdown("""
+            <div class="custom-alert info">
+                <h4>💾 Criando backup dos dados substituídos...</h4>
+            </div>
+            """, unsafe_allow_html=True)
         
         atualizar_status_lock(token, session_lock, "SALVANDO_ENVIADO", "Salvando cópia do arquivo enviado")
-        status_container.info("💾 **Salvando cópia do arquivo enviado...**")
+        status_container.markdown("""
+        <div class="custom-alert info">
+            <h4>💾 Salvando cópia do arquivo enviado...</h4>
+        </div>
+        """, unsafe_allow_html=True)
         salvar_arquivo_enviado(df_novo, nome_arquivo, token)
         
         progress_container.progress(85)
         
         atualizar_status_lock(token, session_lock, "UPLOAD_FINAL", "Salvando arquivo consolidado")
-        status_container.info("📤 **Salvando arquivo consolidado final...**")
+        status_container.markdown("""
+        <div class="custom-alert info">
+            <h4>📤 Salvando arquivo consolidado final...</h4>
+        </div>
+        """, unsafe_allow_html=True)
         
         buffer = BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -1121,8 +1422,12 @@ def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
             status_container.empty()
             progress_container.empty()
             
-            st.success("🎉 **CONSOLIDAÇÃO REALIZADA COM SUCESSO!**")
-            st.success("🔓 **Sistema liberado e disponível para outros usuários**")
+            st.markdown("""
+            <div class="custom-alert success">
+                <h2>🎉 CONSOLIDAÇÃO REALIZADA COM SUCESSO!</h2>
+                <p>🔓 Sistema liberado e disponível para outros usuários</p>
+            </div>
+            """, unsafe_allow_html=True)
             
             with st.expander("📍 Localização dos Arquivos", expanded=True):
                 col1, col2 = st.columns(2)
@@ -1133,33 +1438,81 @@ def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
             
             st.markdown("### 📈 **Resultado da Consolidação**")
             col1, col2, col3, col4 = st.columns(4)
+            
             with col1:
-                st.metric("📊 Total Final", f"{len(df_final):,}")
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-value">{len(df_final):,}</div>
+                    <div class="metric-label">📊 Total Final</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
             with col2:
-                st.metric("➕ Inseridos", f"{inseridos}")
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-value">{inseridos}</div>
+                    <div class="metric-label">➕ Inseridos</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
             with col3:
-                st.metric("🔄 Substituídos", f"{substituidos}")
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-value">{substituidos}</div>
+                    <div class="metric-label">🔄 Substituídos</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
             with col4:
-                st.metric("🗑️ Removidos", f"{removidos}")
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-value">{removidos}</div>
+                    <div class="metric-label">🗑️ Removidos</div>
+                </div>
+                """, unsafe_allow_html=True)
             
             if novas_combinacoes > 0 or combinacoes_existentes > 0:
                 st.markdown("### 📈 **Análise de Combinações (Responsável + Mês/Ano)**")
                 col1, col2, col3 = st.columns(3)
+                
                 with col1:
-                    st.metric("🆕 Novos Períodos", novas_combinacoes, 
-                             help="Combinações de Responsável + Mês/Ano que não existiam antes")
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-value">{novas_combinacoes}</div>
+                        <div class="metric-label">🆕 Novos Períodos</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
                 with col2:
-                    st.metric("🔄 Períodos Atualizados", combinacoes_existentes,
-                             help="Períodos que já existiam e foram substituídos completamente")
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-value">{combinacoes_existentes}</div>
+                        <div class="metric-label">🔄 Períodos Atualizados</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
                 with col3:
                     total_processadas = novas_combinacoes + combinacoes_existentes
-                    st.metric("📊 Total Processado", total_processadas,
-                             help="Total de períodos mensais processados")
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-value">{total_processadas}</div>
+                        <div class="metric-label">📊 Total Processado</div>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
                 if novas_combinacoes > 0:
                     st.success(f"🎉 **{novas_combinacoes} novo(s) período(s) adicionado(s)** - Dados completamente novos!")
                 if combinacoes_existentes > 0:
                     st.info(f"🔄 **{combinacoes_existentes} período(s) atualizado(s)** - Dados mensais completamente substituídos!")
+            
+            # Verificar se a coluna DATA_ULTIMO_ENVIO foi adicionada
+            if 'DATA_ULTIMO_ENVIO' in df_final.columns:
+                st.markdown("""
+                <div class="custom-alert success">
+                    <h4>📅 NOVO: Campo "Data do Último Envio" adicionado!</h4>
+                    <p>A planilha consolidada agora inclui a data do último envio para cada responsável</p>
+                </div>
+                """, unsafe_allow_html=True)
             
             if detalhes:
                 with st.expander("📋 Detalhes das Operações", expanded=removidos > 0):
@@ -1190,12 +1543,22 @@ def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
                 resumo_responsaveis["Data Inicial"] = pd.to_datetime(resumo_responsaveis["Data Inicial"]).dt.strftime("%d/%m/%Y")
                 resumo_responsaveis["Data Final"] = pd.to_datetime(resumo_responsaveis["Data Final"]).dt.strftime("%d/%m/%Y")
                 
+                # Adicionar informação sobre data do último envio se disponível
+                if 'DATA_ULTIMO_ENVIO' in df_final.columns:
+                    ultimo_envio = df_final.groupby("RESPONSÁVEL")["DATA_ULTIMO_ENVIO"].max()
+                    ultimo_envio = ultimo_envio.dt.strftime("%d/%m/%Y %H:%M")
+                    resumo_responsaveis["Último Envio"] = ultimo_envio
+                
                 with st.expander("👥 Resumo por Responsável"):
                     st.dataframe(resumo_responsaveis, use_container_width=True)
             
             return True
         else:
-            status_container.error(f"❌ **Erro no upload:** Status {status_code}")
+            status_container.markdown(f"""
+            <div class="custom-alert error">
+                <h4>❌ Erro no upload: Status {status_code}</h4>
+            </div>
+            """, unsafe_allow_html=True)
             if status_code != 500:
                 st.code(resposta)
             return False
@@ -1204,31 +1567,58 @@ def processar_consolidacao_com_lock(df_novo, nome_arquivo, token):
         logger.error(f"Erro na consolidação: {e}")
         remover_lock(token, session_id, force=True)
         
-        status_container.error(f"❌ **Erro durante consolidação:** {str(e)}")
+        status_container.markdown(f"""
+        <div class="custom-alert error">
+            <h4>❌ Erro durante consolidação: {str(e)}</h4>
+        </div>
+        """, unsafe_allow_html=True)
         progress_container.empty()
         st.error("🔓 **Sistema liberado automaticamente após erro.**")
         return False
 
 # ===========================
-# INTERFACE STREAMLIT
+# INTERFACE STREAMLIT MELHORADA
 # ===========================
 def exibir_info_versao():
-    """Exibe informações de versão e changelog"""
+    """Exibe informações de versão e changelog com visual melhorado"""
     with st.sidebar:
         st.markdown("---")
         st.markdown("### ℹ️ Informações do Sistema")
-        st.info(f"**Versão:** {APP_VERSION}")
-        st.info(f"**Data:** {VERSION_DATE}")
         
-        if APP_VERSION == "2.3.0":
-            st.success("🎯 **LÓGICA POR MÊS/ANO**")
-            st.caption("Resolve problema de duplicatas")
+        st.markdown(f"""
+        <div class="status-card">
+            <strong>Versão:</strong> {APP_VERSION}<br>
+            <strong>Data:</strong> {VERSION_DATE}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if APP_VERSION == "2.4.0":
+            st.markdown("""
+            <div class="status-card success">
+                <strong>🎨 VISUAL MELHORADO</strong><br>
+                <strong>📅 CAMPO DATA ÚLTIMO ENVIO</strong>
+            </div>
+            """, unsafe_allow_html=True)
         
         with st.expander("📝 Configuração de Pastas"):
             st.markdown("**Arquivo Consolidado:**")
             st.code(PASTA_CONSOLIDADO, language=None)
             st.markdown("**Backups e Envios:**")
             st.code(PASTA_ENVIOS_BACKUPS, language=None)
+        
+        with st.expander("🆕 Novidades v2.4.0"):
+            st.markdown("""
+            **🎨 Visual Melhorado:**
+            - Interface moderna e responsiva
+            - CSS organizado e padronizado
+            - Componentes visuais aprimorados
+            - Animações e transições suaves
+            
+            **📅 Novo Campo:**
+            - Data do último envio na planilha
+            - Rastreamento por responsável
+            - Atualização automática
+            """)
 
 def main():
     st.set_page_config(
@@ -1237,23 +1627,32 @@ def main():
         initial_sidebar_state="expanded"
     )
 
-    st.markdown(
-        f'''
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <h2 style="margin: 0; color: #2E8B57;">📊 DSView BI — Upload de Planilhas</h2>
+    # Aplicar estilos CSS melhorados
+    aplicar_estilos_css()
+
+    # Header principal melhorado
+    st.markdown(f"""
+    <div class="main-header fade-in">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1>📊 DSView BI — Upload de Planilhas</h1>
+                <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">Sistema de consolidação de relatórios</p>
             </div>
-            <div style="text-align: right; color: #666; font-size: 0.9em;">
+            <div class="version-badge">
                 <strong>v{APP_VERSION}</strong><br>
                 <small>{VERSION_DATE}</small>
             </div>
         </div>
-        ''',
-        unsafe_allow_html=True
-    )
+    </div>
+    """, unsafe_allow_html=True)
 
-    if APP_VERSION == "2.3.0":
-        st.success("🎯 **LÓGICA DE CONSOLIDAÇÃO POR MÊS/ANO** - Problema de duplicatas por alteração de datas resolvido!")
+    if APP_VERSION == "2.4.0":
+        st.markdown("""
+        <div class="custom-alert success">
+            <h4>🎨 VISUAL MELHORADO + 📅 CAMPO DATA ÚLTIMO ENVIO</h4>
+            <p>Interface moderna e nova funcionalidade de rastreamento de envios!</p>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.sidebar.markdown("### 📤 Upload de Planilhas")
     st.sidebar.markdown("Sistema de consolidação de relatórios")
@@ -1285,47 +1684,60 @@ def main():
     st.markdown("## 📤 Upload de Planilha Excel")
     
     if sistema_ocupado:
-        st.warning("⚠️ **Upload desabilitado** - Sistema em uso por outro usuário")
-        st.info("💡 **Aguarde** a liberação do sistema ou tente novamente em alguns minutos")
+        st.markdown("""
+        <div class="custom-alert warning">
+            <h4>⚠️ Upload desabilitado - Sistema em uso por outro usuário</h4>
+            <p>💡 Aguarde a liberação do sistema ou tente novamente em alguns minutos</p>
+        </div>
+        """, unsafe_allow_html=True)
         
         if st.button("🔄 Verificar Status Novamente"):
             st.rerun()
         
         return
     
-    st.info("💡 **Importante**: A planilha deve conter uma coluna 'RESPONSÁVEL' com os nomes dos responsáveis!")
+    st.markdown("""
+    <div class="custom-alert info">
+        <h4>💡 Importante</h4>
+        <p>A planilha deve conter uma coluna 'RESPONSÁVEL' com os nomes dos responsáveis!</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    st.error("🔒 **VALIDAÇÃO SUPER RIGOROSA ATIVADA**")
-    st.warning("📋 **QUALQUER problema de data (vazias, formato inválido, futuras, antigas) impedirá a consolidação!**")
-    st.info("💡 **Dica**: Revise cuidadosamente sua planilha antes de enviar. Todas as datas devem estar corretas.")
+    st.markdown("""
+    <div class="custom-alert error">
+        <h4>🔒 VALIDAÇÃO SUPER RIGOROSA ATIVADA</h4>
+        <p>📋 QUALQUER problema de data (vazias, formato inválido, futuras, antigas) impedirá a consolidação!</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    with st.expander("🎯 Correções da v2.3.0 - LÓGICA POR MÊS/ANO", expanded=True):
-        st.markdown("### 🛡️ **Problemas Corrigidos:**")
+    with st.expander("🎯 Novidades da v2.4.0 - VISUAL MELHORADO + DATA ÚLTIMO ENVIO", expanded=True):
+        st.markdown("### 🎨 **Melhorias Visuais:**")
         
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("""
-            **❌ Problema Anterior:**
-            - Consolidação por data exata (dia específico)
-            - Alteração de datas criava duplicatas
-            - Inconsistências no mesmo período mensal
-            - Dados duplicados para o mesmo responsável
+            **✨ Interface Moderna:**
+            - CSS organizado e padronizado
+            - Componentes visuais aprimorados
+            - Layout responsivo
+            - Animações suaves
             """)
             
         with col2:
             st.markdown("""
-            **✅ Soluções Implementadas:**
-            - Consolidação por RESPONSÁVEL + MÊS/ANO
-            - Substituição completa do período mensal
-            - Verificação de segurança por períodos
-            - Eliminação total de duplicatas temporais
+            **📊 Dashboard Melhorado:**
+            - Métricas visuais aprimoradas
+            - Cards de status modernos
+            - Feedback visual durante processos
+            - Tema consistente
             """)
         
-        st.success("🎯 **Resultado:** Consolidação 100% consistente - alterações de data dentro do mesmo mês substituem todos os registros daquele período!")
+        st.markdown("### 📅 **Nova Funcionalidade:**")
+        st.success("🆕 **Campo 'Data do Último Envio'** - A planilha consolidada agora registra quando cada responsável teve seus dados atualizados pela última vez!")
         
-        st.markdown("### 📅 **Como Funciona Agora:**")
-        st.info("Se João tinha dados de 10/03/2024 e você envia dados de 15/03/2024, TODOS os registros de João em março/2024 são substituídos pelos novos dados")
-        st.info("Isso garante que não haverá dados duplicados ou inconsistentes para o mesmo responsável no mesmo mês")
+        st.markdown("### 🔧 **Como Funciona:**")
+        st.info("Quando você envia dados de um responsável, o sistema automaticamente registra a data e hora do envio na coluna 'DATA_ULTIMO_ENVIO'")
+        st.info("Isso permite rastrear quando cada responsável teve seus dados atualizados pela última vez")
     
     st.divider()
 
@@ -1338,7 +1750,11 @@ def main():
     df = None
     if uploaded_file:
         try:
-            st.success(f"📁 Arquivo carregado: **{uploaded_file.name}**")
+            st.markdown(f"""
+            <div class="custom-alert success">
+                <h4>📁 Arquivo carregado: {uploaded_file.name}</h4>
+            </div>
+            """, unsafe_allow_html=True)
             
             file_extension = uploaded_file.name.split('.')[-1].lower()
             
@@ -1365,140 +1781,94 @@ def main():
                 else:
                     sheet = sheets[0]
                     if sheet != "Vendas CTs":
-                        st.warning(f"⚠️ A aba atual se chama '{sheet}'. Recomendamos renomeá-la para 'Vendas CTs'")
+                        st.warning("⚠️ Recomendamos que a aba seja chamada 'Vendas CTs'")
                 
                 df = pd.read_excel(uploaded_file, sheet_name=sheet)
                 df.columns = df.columns.str.strip().str.upper()
                 
-            st.success(f"✅ Dados carregados com sucesso!")
-            
+                st.success(f"✅ Dados carregados: {len(df)} linhas, {len(df.columns)} colunas")
+                
+                # Preview dos dados com visual melhorado
+                with st.expander("👀 Preview dos Dados", expanded=True):
+                    st.dataframe(df.head(10), use_container_width=True)
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.markdown(f"""
+                        <div class="metric-container">
+                            <div class="metric-value">{len(df)}</div>
+                            <div class="metric-label">Linhas</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        st.markdown(f"""
+                        <div class="metric-container">
+                            <div class="metric-value">{len(df.columns)}</div>
+                            <div class="metric-label">Colunas</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col3:
+                        if "RESPONSÁVEL" in df.columns:
+                            responsaveis_unicos = df["RESPONSÁVEL"].dropna().nunique()
+                            st.markdown(f"""
+                            <div class="metric-container">
+                                <div class="metric-value">{responsaveis_unicos}</div>
+                                <div class="metric-label">Responsáveis</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"""
+                            <div class="metric-container">
+                                <div class="metric-value">❌</div>
+                                <div class="metric-label">Responsáveis</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                
         except Exception as e:
-            st.error(f"❌ Erro ao ler o Excel: {e}")
-            logger.error(f"Erro ao ler Excel: {e}")
+            st.error(f"❌ Erro ao ler arquivo: {str(e)}")
+            st.stop()
 
     if df is not None:
-        st.subheader("👀 Prévia dos dados")
-        st.dataframe(df.head(10), use_container_width=True, height=300)
-
-        st.subheader("📊 Resumo dos dados")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Linhas", df.shape[0])
-        with col2:
-            st.metric("Colunas", df.shape[1])
-        with col3:
-            if "DATA" in df.columns:
-                datas_validas = pd.to_datetime(df["DATA"], errors="coerce").notna().sum()
-                st.metric("Datas válidas", datas_validas)
-
-        st.subheader("💰 Resumo de Totais por Produto")
+        st.markdown("### 🔍 Validação dos Dados")
         
-        colunas_produtos = ['TMO - DUTO', 'TMO - FREIO', 'TMO - SANIT', 'TMO - VERNIZ', 'CX EVAP']
-        colunas_encontradas = [col for col in colunas_produtos if col in df.columns]
+        with st.spinner("🔍 Validando dados..."):
+            erros, avisos, problemas_datas = validar_dados_enviados(df)
         
-        if colunas_encontradas:
-            totais = {}
-            total_geral = 0
-            
-            for coluna in colunas_encontradas:
-                valores_numericos = pd.to_numeric(df[coluna], errors='coerce').fillna(0)
-                total = int(valores_numericos.sum())
-                totais[coluna] = total
-                total_geral += total
-            
-            colunas_tmo = [col for col in colunas_encontradas if col.startswith('TMO -')]
-            if colunas_tmo:
-                tmo_total = sum(totais[col] for col in colunas_tmo)
-                totais['TMO - TOTAL'] = tmo_total
-            
-            produtos_para_exibir = [col for col in colunas_produtos if col in totais]
-            if 'TMO - TOTAL' in totais:
-                produtos_para_exibir.append('TMO - TOTAL')
-            
-            num_colunas = len(produtos_para_exibir)
-            cols = st.columns(num_colunas)
-            
-            for i, coluna in enumerate(produtos_para_exibir):
-                with cols[i]:
-                    total = totais[coluna]
-                    total_formatado = f"{total:,}".replace(',', '.')
-                    
-                    if 'DUTO' in coluna:
-                        emoji = "🔧"
-                    elif 'FREIO' in coluna:
-                        emoji = "🚗"
-                    elif 'SANIT' in coluna:
-                        emoji = "🧽"
-                    elif 'VERNIZ' in coluna:
-                        emoji = "🎨"
-                    elif 'EVAP' in coluna:
-                        emoji = "📦"
-                    elif 'TOTAL' in coluna:
-                        emoji = "💰"
-                    else:
-                        emoji = "📊"
-                    
-                    nome_display = coluna.replace('TMO - ', '').title()
-                    
-                    st.metric(f"{emoji} {nome_display}", total_formatado)
-        else:
-            st.warning("⚠️ Nenhuma coluna de produtos encontrada")
-
-        colunas_nulas = df.columns[df.isnull().any()].tolist()
-        if colunas_nulas:
-            st.warning(f"⚠️ Colunas com valores nulos: {', '.join(colunas_nulas[:5])}")
-            if len(colunas_nulas) > 5:
-                st.warning(f"... e mais {len(colunas_nulas) - 5} colunas")
-        else:
-            st.success("✅ Nenhuma coluna com valores nulos.")
-
-        st.subheader("🔍 Validações Super Rigorosas")
-        erros, avisos, linhas_invalidas_detalhes = validar_dados_enviados(df)
-        
-        for aviso in avisos:
-            if aviso.startswith("✅"):
-                st.success(aviso)
-            else:
-                st.warning(aviso)
-        
-        if linhas_invalidas_detalhes:
-            exibir_relatorio_problemas_datas(linhas_invalidas_detalhes)
-        
+        # Exibir resultados da validação
         if erros:
-            st.markdown("## ❌ **PROBLEMAS ENCONTRADOS - CORREÇÃO OBRIGATÓRIA**")
+            st.markdown("""
+            <div class="custom-alert error">
+                <h4>❌ Problemas Encontrados</h4>
+                <p>Corrija os problemas abaixo antes de prosseguir:</p>
+            </div>
+            """, unsafe_allow_html=True)
             
             for erro in erros:
-                if erro.startswith("❌"):
-                    st.error(erro)
-                elif erro.startswith("🔧"):
-                    st.error(erro)
-                elif erro.startswith("📋"):
-                    st.warning(erro)
-                else:
-                    st.error(erro)
+                st.error(erro)
             
-            st.markdown("---")
-            st.error("🚫 **A consolidação está BLOQUEADA até que todos os problemas sejam corrigidos!**")
-            st.info("💡 **Próximos passos:**")
-            st.info("1. ✏️ Abra sua planilha Excel")
-            st.info("2. 🔧 Corrija TODOS os problemas listados acima")
-            st.info("3. 💾 Salve o arquivo")
-            st.info("4. 🔄 Faça o upload novamente")
-
-        st.divider()
-        st.markdown("### 🚀 **Consolidar Dados**")
-        
-        # Verificar novamente se sistema está livre antes de permitir envio
-        sistema_ocupado_agora, _ = verificar_lock_existente(token)
-        
-        if sistema_ocupado_agora:
-            st.error("🔒 Sistema foi bloqueado por outro usuário")
-            if st.button("🔄 Atualizar Página"):
-                st.rerun()
+            if problemas_datas:
+                exibir_problemas_datas(problemas_datas)
+            
+            botao_desabilitado = True
         else:
-            # Botão desabilitado se houver QUALQUER erro
-            botao_desabilitado = bool(erros)
-            
+            st.markdown("""
+            <div class="custom-alert success">
+                <h4>✅ Validação Aprovada</h4>
+                <p>Todos os dados estão válidos e prontos para consolidação!</p>
+            </div>
+            """, unsafe_allow_html=True)
+            botao_desabilitado = False
+        
+        if avisos:
+            for aviso in avisos:
+                st.info(aviso)
+        
+        st.divider()
+        
+        # Botões de ação com visual melhorado
+        if not erros:
             col1, col2 = st.columns([2, 1])
             
             with col1:
@@ -1512,17 +1882,29 @@ def main():
                                 help="Inicia a consolidação por mês/ano imediatamente"):
                         
                         # Aviso importante antes de iniciar
-                        st.warning("⏳ **Consolidação iniciada! Aguarde o término do processo. NÃO feche esta página!**")
+                        st.markdown("""
+                        <div class="custom-alert warning">
+                            <h4>⏳ Consolidação iniciada! Aguarde o término do processo. NÃO feche esta página!</h4>
+                        </div>
+                        """, unsafe_allow_html=True)
                         
                         # Iniciar consolidação diretamente
                         sucesso = processar_consolidacao_com_lock(df, uploaded_file.name, token)
                         
                         if sucesso:
                             st.balloons()
-                            st.success("🎉 **CONSOLIDAÇÃO FINALIZADA COM SUCESSO!**")
-                            st.info("💡 Você pode enviar uma nova planilha ou fechar esta página")
+                            st.markdown("""
+                            <div class="custom-alert success">
+                                <h2>🎉 CONSOLIDAÇÃO FINALIZADA COM SUCESSO!</h2>
+                                <p>💡 Você pode enviar uma nova planilha ou fechar esta página</p>
+                            </div>
+                            """, unsafe_allow_html=True)
                         else:
-                            st.error("❌ **Falha na consolidação. Tente novamente.**")
+                            st.markdown("""
+                            <div class="custom-alert error">
+                                <h4>❌ Falha na consolidação. Tente novamente.</h4>
+                            </div>
+                            """, unsafe_allow_html=True)
             
             with col2:
                 if st.button("🔄 Limpar Tela", type="secondary"):
@@ -1533,29 +1915,30 @@ def main():
             st.info("**📊 Análise dos dados enviados por mês/ano**")
             st.info("**🔄 Substituição de períodos mensais existentes** (mesmo responsável + mês/ano)")
             st.info("**➕ Adição de novos períodos** (combinações inexistentes)")
+            st.info("**📅 Atualização da data do último envio** para responsáveis modificados")
             st.info("**💾 Criação de backups automáticos** dos dados substituídos")
             st.info("**🔒 Bloqueio temporário do sistema** durante o processo")
             st.info("**🛡️ Verificação de segurança** antes de salvar")
             st.info("**📈 Relatório completo** das operações realizadas")
             st.success("**🎯 NOVO:** Agora a consolidação é feita por **RESPONSÁVEL + MÊS/ANO** - elimina duplicatas!")
+            st.success("**📅 NOVO:** Campo **DATA_ULTIMO_ENVIO** registra quando cada responsável foi atualizado!")
 
-    st.divider()
-    st.markdown(
-        f"""
-        <div style="text-align: center; color: #666; font-size: 0.8em;">
-            <strong>DSView BI - Sistema de Consolidação de Relatórios v{APP_VERSION}</strong><br>
-            ⚠️ Certifique-se de que sua planilha contenha:<br>
-            • Uma aba chamada <strong>'Vendas CTs'</strong><br>
-            • Uma coluna <strong>'DATA'</strong><br>
-            • Uma coluna <strong>'RESPONSÁVEL'</strong><br>
-            • Colunas: <strong>TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP</strong><br>
-            <br>
-            🎯 <strong>v2.3.0:</strong> Lógica de consolidação por mês/ano - Duplicatas eliminadas<br>
-            <small>Última atualização: {VERSION_DATE}</small>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    # Footer melhorado
+    st.markdown("---")
+    st.markdown(f"""
+    <div class="footer">
+        <strong>DSView BI - Sistema de Consolidação de Relatórios v{APP_VERSION}</strong><br>
+        ⚠️ Certifique-se de que sua planilha contenha:<br>
+        • Uma aba chamada <strong>'Vendas CTs'</strong><br>
+        • Uma coluna <strong>'DATA'</strong><br>
+        • Uma coluna <strong>'RESPONSÁVEL'</strong><br>
+        • Colunas: <strong>TMO - Duto, TMO - Freio, TMO - Sanit, TMO - Verniz, CX EVAP</strong><br>
+        <br>
+        🎨 <strong>v2.4.0:</strong> Visual melhorado + Campo data do último envio<br>
+        <small>Última atualização: {VERSION_DATE}</small>
+    </div>
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
+
