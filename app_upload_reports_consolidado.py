@@ -764,6 +764,14 @@ def exibir_problemas_datas(problemas_datas):
         height=400
     )
 
+def normalizar_texto(texto):
+    """Normaliza strings: remove espaços extras, converte para maiúsculas e remove acentos."""
+    if pd.isna(texto) or not isinstance(texto, str):
+        return texto
+    texto = texto.strip().upper()
+    texto = ''.join(c for c in texto if c.isalnum() or c.isspace())
+    return unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('utf-8')
+
 def validar_dados_enviados(df):
     """Validação super rigorosa dos dados enviados"""
     erros = []
@@ -774,6 +782,39 @@ def validar_dados_enviados(df):
         erros.append("❌ A planilha está vazia")
         return erros, avisos, linhas_invalidas_detalhes
     
+    # Validação de campos específicos
+    campos_para_validar = ["GRUPO", "CONCESSIONÁRIA", "LOJA", "MARCA", "UF", "RESPONSÁVEL", "CONSULTORES"]
+    
+    for campo in campos_para_validar:
+        if campo not in df.columns:
+            erros.append(f"⚠️ A planilha deve conter uma coluna \'{campo}\'")
+            avisos.append(f"📋 Certifique-se de que sua planilha tenha uma coluna chamada \'{campo}\'")
+            continue
+        
+        # Normalizar a coluna para facilitar a comparação e evitar inconsistências
+        df[f"_{campo}_NORMALIZADO"] = df[campo].apply(normalizar_texto)
+        
+        # Verificar valores vazios após normalização
+        if df[f"_{campo}_NORMALIZADO"].isnull().any():
+            erros.append(f"❌ Coluna \'{campo}\' contém valores vazios ou inválidos após normalização.")
+            
+        # Verificar inconsistências de capitalização/espaços
+        valores_originais = df[campo].dropna().unique()
+        valores_normalizados = df[f"_{campo}_NORMALIZADO"].dropna().unique()
+        
+        if len(valores_originais) != len(valores_normalizados):
+            # Isso indica que há valores que são diferentes na forma original, mas iguais após normalização
+            # Ex: 'Nome' e 'nome', ou 'Nome ' e 'Nome'
+            inconsistencias_encontradas = []
+            for val_norm in valores_normalizados:
+                originais_para_norm = [v for v in valores_originais if normalizar_texto(v) == val_norm]
+                if len(originais_para_norm) > 1:
+                    inconsistencias_encontradas.append(f"'{val_norm}' (originalmente: {', '.join(originais_para_norm)})")
+            
+            if inconsistencias_encontradas:
+                erros.append(f"❌ Inconsistências de capitalização/espaços na coluna \'{campo}\': {'; '.join(inconsistencias_encontradas)}")
+                avisos.append(f"💡 Considere padronizar os valores na coluna \'{campo}\' para evitar problemas.")
+
     if "RESPONSÁVEL" not in df.columns:
         erros.append("⚠️ A planilha deve conter uma coluna 'RESPONSÁVEL'")
         avisos.append("📋 Certifique-se de que sua planilha tenha uma coluna chamada 'RESPONSÁVEL'")
